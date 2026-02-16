@@ -1,16 +1,31 @@
-[package]
-name = "vetta"
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "apps/cli"
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 authors = ["lnivva"]
 license = "MIT"
 description = "Institutional-grade financial analysis engine combining ASR (Whisper), vector embeddings, and semantic search for earnings call and 10-K analysis."
 
-[dependencies]
+[workspace.dependencies]
+# Internal
+vetta_core = { path = "crates/core", version = "0.1.0" }
 
+# External
+clap = { version = "4.5.58", features = ["derive"] }
+infer = "0.19.0"
+thiserror = "2.0.18"
+serde = { version = "1.0.228", features = ["derive"] }
 
 [profile.dev]
 opt-level = 0
 
 [profile.release]
 opt-level = 3
+lto = true
+strip = true

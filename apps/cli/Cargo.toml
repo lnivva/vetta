@@ -1,0 +1,15 @@
+[package]
+name = "vetta_cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "vetta"
+path = "src/main.rs"
+
+[dependencies]
+vetta_core.workspace = true
+clap.workspace = true
