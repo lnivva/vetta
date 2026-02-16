@@ -11,3 +11,6 @@ infer.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 miette.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
