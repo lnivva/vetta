@@ -33,6 +33,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Resource {
+    #[command(about = "Ingest and process earnings calls")]
     Earnings {
         #[command(subcommand)]
         action: EarningsAction,
@@ -41,7 +42,7 @@ enum Resource {
 
 #[derive(Subcommand)]
 enum EarningsAction {
-    /// Ingest and process a raw earnings call file
+    #[command(about = "Process an audio/video file")]
     Process {
         #[arg(short, long)]
         file: String,
