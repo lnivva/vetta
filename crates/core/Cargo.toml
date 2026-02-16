@@ -10,3 +10,4 @@ description.workspace = true
 infer.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+miette.workspace = true
