@@ -4,7 +4,7 @@ log_level = "info"            # debug | info | warn | error
 
 [model]
 size = "large-v3"        # tiny | base | small | medium | large-v3
-download_dir = "/var/lib/whisper/models"
+download_dir = "/tmp/whisper_models"
 
 # "auto" triggers hardware detection at startup
 device = "auto"            # auto | cuda | cpu
