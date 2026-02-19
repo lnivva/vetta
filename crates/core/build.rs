@@ -2,6 +2,8 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=../../proto/speech/speech.proto");
+
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR")?);
 
     let proto_path = manifest_dir.join("../../proto/speech/speech.proto");
