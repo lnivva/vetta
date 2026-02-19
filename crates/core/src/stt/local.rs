@@ -11,8 +11,8 @@ pub mod proto {
 }
 
 use proto::{
-    TranscribeOptions as ProtoOptions, TranscribeRequest,
     speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
+    TranscribeOptions as ProtoOptions, TranscribeRequest,
 };
 
 pub struct LocalSttStrategy {
@@ -60,12 +60,16 @@ impl SpeechToText for LocalSttStrategy {
 
         let mut client = self.client().await?;
 
+        let num_speakers: i32 = options.num_speakers.try_into().map_err(|_| {
+            SttError::Service(tonic::Status::invalid_argument("num_speakers out of range"))
+        })?;
+
         let request = TranscribeRequest {
             audio_source: Some(AudioSource::Path(audio_path.to_string())),
             language: options.language.unwrap_or_default(),
             options: Some(ProtoOptions {
                 diarization: options.diarization,
-                num_speakers: options.num_speakers as i32,
+                num_speakers,
                 initial_prompt: options.initial_prompt.unwrap_or_default(),
             }),
         };
