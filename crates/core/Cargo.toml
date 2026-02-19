@@ -21,3 +21,6 @@ hyper-util.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+
+[build-dependencies]
+tonic-build = "0.12"
