@@ -16,7 +16,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+
+      - name: Install protbuf compiler
+        run: sudo apt-get install protobuf-compiler
+
       - name: Build
         run: cargo build --verbose
+
       - name: Run tests
         run: cargo test --verbose
