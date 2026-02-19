@@ -1,4 +1,5 @@
 import io
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import grpc
@@ -9,7 +10,7 @@ from settings import Settings, ServiceConfig, ModelConfig, InferenceConfig, Conc
 from speech import speech_pb2
 
 
-def make_settings(**inference_overrides) -> Settings:
+def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
     """
     Builds a Settings object with sane defaults for service, model, inference, and concurrency.
     
@@ -39,15 +40,15 @@ def make_settings(**inference_overrides) -> Settings:
     )
     inference_defaults.update(inference_overrides)
     return Settings(
-        service=ServiceConfig(socket_path="/tmp/t.sock", log_level="info"),
-        model=ModelConfig(size="small", download_dir="/tmp", device="cpu", compute_type="int8"),
+        service=ServiceConfig(socket_path=str(tmp_dir / "t.sock"), log_level="info", max_audio_size_mb=10),
+        model=ModelConfig(size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"),
         inference=InferenceConfig(**inference_defaults),
         concurrency=ConcurrencyConfig(max_workers=1, cpu_threads=2, num_workers=1),
     )
 
 
 @pytest.fixture
-def servicer(mock_whisper_model):
+def servicer(mock_whisper_model, tmp_path):
     """
     Create a WhisperServicer with its WhisperModel patched and replaced by the provided mock.
     
@@ -58,12 +59,12 @@ def servicer(mock_whisper_model):
         WhisperServicer: A service instance whose `model` attribute is set to `mock_whisper_model`.
     """
     with patch("servicer.WhisperModel", return_value=mock_whisper_model):
-        svc = WhisperServicer(make_settings())
+        svc = WhisperServicer(make_settings(tmp_path))
     svc.model = mock_whisper_model
     return svc
 
 
-def make_request(audio_path="/tmp/test.mp3", language="en", initial_prompt=""):
+def make_request(audio_path="test.mp3", language="en", initial_prompt=""):
     """
     Create a mocked gRPC request object configured to represent an audio_path payload.
     
@@ -133,7 +134,9 @@ class TestWhisperServicer:
         """Verifies URIs are fetched and passed as BytesIO."""
         mock_response = MagicMock()
         mock_response.content = b"downloaded bytes"
-        mock_get.return_value = mock_response
+        mock_response.headers = {}
+
+        mock_get.return_value.__enter__.return_value = mock_response
 
         req = MagicMock()
         req.WhichOneof.return_value = "audio_uri"
@@ -143,7 +146,7 @@ class TestWhisperServicer:
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        mock_get.assert_called_once_with("https://example.com/audio.wav", timeout=15)
+        mock_get.assert_called_once_with("https://example.com/audio.wav", timeout=15, stream=True)
         audio_input = mock_whisper_model.transcribe.call_args[0][0]
         assert isinstance(audio_input, io.BytesIO)
         assert audio_input.read() == b"downloaded bytes"
