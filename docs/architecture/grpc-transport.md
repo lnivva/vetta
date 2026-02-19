@@ -10,12 +10,12 @@ unix:///tmp/whisper.sock
 
 ### Why UDS over localhost TCP?
 
-| Property | TCP (localhost) | Unix Domain Socket |
-|---|---|---|
-| Network exposure | Binds a port, visible to other processes | No port, filesystem only |
-| Access control | Firewall rules or port binding | File permissions (`chmod 0600`) |
-| Performance | Loopback overhead | Kernel-mediated, no network stack |
-| Discovery | Port conflicts possible | Path is explicit |
+| Property         | TCP (localhost)                          | Unix Domain Socket                |
+|------------------|------------------------------------------|-----------------------------------|
+| Network exposure | Binds a port, visible to other processes | No port, filesystem only          |
+| Access control   | Firewall rules or port binding           | File permissions (`chmod 0600`)   |
+| Performance      | Loopback overhead                        | Kernel-mediated, no network stack |
+| Discovery        | Port conflicts possible                  | Path is explicit                  |
 
 Security is the primary reason. The socket is `chmod 0600` — only the owning user
 can connect. No firewall rule, no port scanner exposure, no accidental remote access.
@@ -39,30 +39,30 @@ service SpeechToText {
 
 message TranscribeRequest {
   string            audio_path = 1;
-  string            language   = 2;
-  TranscribeOptions options    = 3;
+  string            language = 2;
+  TranscribeOptions options = 3;
 }
 
 message TranscribeOptions {
-  bool   diarization    = 1;
-  int32  num_speakers   = 2;
+  bool   diarization = 1;
+  int32  num_speakers = 2;
   string initial_prompt = 3;
 }
 
 message TranscriptChunk {
   float          start_time = 1;
-  float          end_time   = 2;
-  string         text       = 3;
+  float          end_time = 2;
+  string         text = 3;
   string         speaker_id = 4;
   float          confidence = 5;
-  repeated Word  words      = 6;
+  repeated Word  words = 6;
 }
 
 message Word {
-  float  start_time  = 1;
-  float  end_time    = 2;
-  string text        = 3;
-  float  confidence  = 4;
+  float  start_time = 1;
+  float  end_time = 2;
+  string text = 3;
+  float  confidence = 4;
 }
 ```
 
@@ -84,14 +84,14 @@ that do not match tokio's `AsyncRead`/`AsyncWrite`. The bridge is `TokioIo`:
 ```rust
 use hyper_util::rt::TokioIo;
 
-Endpoint::try_from("http://localhost")?
-    .connect_with_connector(service_fn(move |_: Uri| {
-        let path = path.clone();
-        async move {
-            UnixStream::connect(&path).await.map(TokioIo::new)
-        }
-    }))
-    .await?
+Endpoint::try_from("http://localhost") ?
+.connect_with_connector(service_fn( move | _: Uri| {
+let path = path.clone();
+async move {
+UnixStream::connect( & path).await.map(TokioIo::new)
+}
+}))
+.await?
 ```
 
 `TokioIo::new` wraps the `UnixStream` and implements hyper's traits by delegating
@@ -104,13 +104,13 @@ When a `CloudSttStrategy` is added, the only change is the connector:
 
 ```rust
 // Local: Unix socket
-.connect_with_connector(service_fn(|_| UnixStream::connect(&path).await.map(TokioIo::new)))
+.connect_with_connector(service_fn( | _ | UnixStream::connect( & path).await.map(TokioIo::new)))
 
 // Cloud: TLS
 Endpoint::from_static("https://stt.example.com")
-    .tls_config(tls)?
-    .connect()
-    .await?
+.tls_config(tls) ?
+.connect()
+.await?
 ```
 
 The generated client code (`SpeechToTextClient`) and all downstream Rust code

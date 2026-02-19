@@ -2,10 +2,10 @@
 
 ## Two config files, two purposes
 
-| File | Read by | Purpose |
-|---|---|---|
-| `pyproject.toml` | uv / pip | Python package metadata, dependencies, Python version |
-| `config.toml` | Python service at runtime | Model, device, socket, inference tuning |
+| File             | Read by                   | Purpose                                               |
+|------------------|---------------------------|-------------------------------------------------------|
+| `pyproject.toml` | uv / pip                  | Python package metadata, dependencies, Python version |
+| `config.toml`    | Python service at runtime | Model, device, socket, inference tuning               |
 
 These do not overlap. `pyproject.toml` is about the package.
 `config.toml` is about how the running service behaves on a specific machine.
@@ -15,23 +15,23 @@ These do not overlap. `pyproject.toml` is about the package.
 ```toml
 [service]
 socket_path = "/tmp/whisper.sock"
-log_level   = "info"             # debug | info | warn | error
+log_level = "info"             # debug | info | warn | error
 
 [model]
-size         = "large-v3"        # tiny | base | small | medium | large-v3
+size = "large-v3"        # tiny | base | small | medium | large-v3
 download_dir = "~/.cache/whisper_models"
-device       = "auto"            # auto | cuda | cpu
+device = "auto"            # auto | cuda | cpu
 compute_type = "auto"            # auto | float16 | int8_float16 | int8
 
 [inference]
-beam_size                   = 5
-vad_filter                  = true
-vad_min_silence_ms          = 500
-no_speech_threshold         = 0.6
-log_prob_threshold          = -1.0
+beam_size = 5
+vad_filter = true
+vad_min_silence_ms = 500
+no_speech_threshold = 0.6
+log_prob_threshold = -1.0
 compression_ratio_threshold = 2.4
-word_timestamps             = true
-initial_prompt              = ""   # overridden per-request if provided
+word_timestamps = true
+initial_prompt = ""   # overridden per-request if provided
 
 [concurrency]
 max_workers = 1   # 1 for GPU (serialised), 2 for CPU
@@ -57,12 +57,12 @@ Environment variables take precedence over `config.toml`.
 
 ## Hardware matrix
 
-| Hardware | `device` | `compute_type` | Notes |
-|---|---|---|---|
-| NVIDIA GPU (≥8GB VRAM) | `cuda` | `float16` | Best performance |
-| NVIDIA GPU (<8GB VRAM) | `cuda` | `int8_float16` | Saves VRAM, minimal quality loss |
-| CPU (x86_64) | `cpu` | `int8` | AVX2/AVX512 optimised |
-| Apple Silicon (arm64) | `cpu` | `int8` | NEON int8; MPS not yet supported by CTranslate2 |
+| Hardware               | `device` | `compute_type` | Notes                                           |
+|------------------------|----------|----------------|-------------------------------------------------|
+| NVIDIA GPU (≥8GB VRAM) | `cuda`   | `float16`      | Best performance                                |
+| NVIDIA GPU (<8GB VRAM) | `cuda`   | `int8_float16` | Saves VRAM, minimal quality loss                |
+| CPU (x86_64)           | `cpu`    | `int8`         | AVX2/AVX512 optimised                           |
+| Apple Silicon (arm64)  | `cpu`    | `int8`         | NEON int8; MPS not yet supported by CTranslate2 |
 
 With `device = "auto"`, the service detects CUDA availability, queries VRAM via
 `nvidia-smi`, and selects `compute_type` accordingly. On Apple Silicon it logs

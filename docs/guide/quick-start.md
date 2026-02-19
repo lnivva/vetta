@@ -2,12 +2,12 @@
 
 ## Prerequisites
 
-| Tool | Purpose | Install |
-|------|---------|---------|
-| Rust (stable) | Core crate + CLI | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
-| uv | Python env management | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
-| protoc | Proto compilation | `brew install protobuf` |
-| ffmpeg | Audio conversion | `brew install ffmpeg` |
+| Tool          | Purpose               | Install                                                           |
+|---------------|-----------------------|-------------------------------------------------------------------|
+| Rust (stable) | Core crate + CLI      | `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs \| sh` |
+| uv            | Python env management | `curl -LsSf https://astral.sh/uv/install.sh \| sh`                |
+| protoc        | Proto compilation     | `brew install protobuf`                                           |
+| ffmpeg        | Audio conversion      | `brew install ffmpeg`                                             |
 
 ## 1. Clone and build
 

@@ -65,7 +65,8 @@ Contains:
 
 ### Python STT Service (`services/stt/local`)
 
-A gRPC service wrapping `faster-whisper`. Runs as a long-lived process. The model is loaded once at startup — the expensive part. Each `Transcribe` RPC call streams segments back as they are produced by the model's internal chunker.
+A gRPC service wrapping `faster-whisper`. Runs as a long-lived process. The model is loaded once at startup — the
+expensive part. Each `Transcribe` RPC call streams segments back as they are produced by the model's internal chunker.
 
 ### Proto contract (`proto/speech.proto`)
 

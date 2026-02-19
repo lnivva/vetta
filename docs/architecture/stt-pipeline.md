@@ -16,12 +16,12 @@ stays warm. Subsequent calls connect to the already-running service in milliseco
 
 The alternatives considered:
 
-| Approach | Why rejected |
-|---|---|
-| `stdin/stdout` subprocess | Brittle for binary data, no streaming, hard to version |
-| REST/FastAPI | HTTP overhead, no native streaming, not designed for binary |
-| Shared memory | Complex, unsafe, hard to version across Rust/Python |
-| **gRPC (chosen)** | Typed contract, streaming, same interface for local and cloud |
+| Approach                  | Why rejected                                                  |
+|---------------------------|---------------------------------------------------------------|
+| `stdin/stdout` subprocess | Brittle for binary data, no streaming, hard to version        |
+| REST/FastAPI              | HTTP overhead, no native streaming, not designed for binary   |
+| Shared memory             | Complex, unsafe, hard to version across Rust/Python           |
+| **gRPC (chosen)**         | Typed contract, streaming, same interface for local and cloud |
 
 The decisive factor: the **strategy pattern maps directly to the proto contract**.
 The `.proto` file *is* the `SpeechToText` interface. Local uses a Unix socket;
@@ -68,7 +68,7 @@ The `TranscribeRequest` carries an `audio_path` string, not the raw audio bytes.
 ```protobuf
 message TranscribeRequest {
   string audio_path = 1;  // absolute path on shared filesystem
-  ...
+    ...
 }
 ```
 

@@ -13,7 +13,7 @@ pub trait SpeechToText: Send + Sync {
 }
 
 pub type TranscriptStream =
-    Pin<Box<dyn Stream<Item = Result<TranscriptChunk, SttError>> + Send>>;
+Pin<Box<dyn Stream<Item=Result<TranscriptChunk, SttError>> + Send>>;
 ```
 
 This is the only interface the CLI depends on. Everything downstream —
@@ -30,13 +30,13 @@ of what is behind it:
 
 ```rust
 let strategy: Box<dyn SpeechToText> = match config.stt.strategy.as_str() {
-    "local"  => Box::new(LocalSttStrategy::connect(&config.stt.socket_path).await?),
-    "openai" => Box::new(CloudSttStrategy::new(&config.stt.api_key)),
-    s        => bail!("Unknown STT strategy: {s}"),
+"local" => Box::new(LocalSttStrategy::connect(& config.stt.socket_path).await ?),
+"openai" => Box::new(CloudSttStrategy::new( & config.stt.api_key)),
+s => bail ! ("Unknown STT strategy: {s}"),
 };
 
 // The rest of the pipeline never changes regardless of which strategy is chosen
-let mut stream = strategy.transcribe(&file, options).await?;
+let mut stream = strategy.transcribe( & file, options).await?;
 ```
 
 ## Current strategies
@@ -64,17 +64,17 @@ The Rust client code is structurally identical; only the transport differs.
 ```rust
 pub struct TranscriptChunk {
     pub start_time: f32,
-    pub end_time:   f32,
-    pub text:       String,
+    pub end_time: f32,
+    pub text: String,
     pub speaker_id: String,   // empty until diarization stage runs
     pub confidence: f32,
-    pub words:      Vec<Word>,
+    pub words: Vec<Word>,
 }
 
 pub struct Word {
     pub start_time: f32,
-    pub end_time:   f32,
-    pub text:       String,
+    pub end_time: f32,
+    pub text: String,
     pub confidence: f32,
 }
 ```
