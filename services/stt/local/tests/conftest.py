@@ -53,9 +53,11 @@ def minimal_config(tmp_path: Path) -> Path:
 @pytest.fixture(scope="module")
 def mock_whisper_model():
     """
-    Create a MagicMock simulating a WhisperModel with a predefined transcription result.
+    Create a MagicMock that simulates a WhisperModel producing a single predefined transcription segment.
     
-    The mock's transcribe.return_value is a tuple of (segments, info) where segments is a list containing a single fake segment (with text "  Hello world  ", start/end times, avg_logprob and a single fake word) and info contains language ("en") and language_probability (0.98). Attach or replace model.transcribe.return_value in tests to customize behavior.
+    The mock's transcribe.return_value is a tuple (segments, info) where:
+    - segments is a list with one segment having text "  Hello world  ", start 0.0, end 3.5, avg_logprob -0.3, and words containing a single word with start 0.0, end 0.5, word "Hello", and probability 0.99.
+    - info has language "en" and language_probability 0.98.
     
     Returns:
         MagicMock: A mock WhisperModel whose transcribe method returns (segments, info) by default.

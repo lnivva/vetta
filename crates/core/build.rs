@@ -1,18 +1,14 @@
-/// Generates Rust gRPC code from the speech.proto file with server-side code generation disabled.
+/// Generates Rust gRPC client code from ../../proto/speech.proto with server-side code generation disabled.
 ///
-/// Configures `tonic_build` to disable server generation and compiles `../../proto/speech.proto` using `../../proto` as the include path. Returns `Ok(())` when compilation succeeds.
-///
-/// # Errors
-///
-/// Returns an error if the proto compilation or code generation fails.
+/// Configures `tonic_build` to disable server generation and compiles the proto file using `../../proto` as the include path.
+/// Returns `Ok(())` on success and propagates any error from proto compilation or code generation.
 ///
 /// # Examples
 ///
 /// ```
 /// # fn try_main() -> Result<(), Box<dyn std::error::Error>> {
 /// main()?;
-/// # Ok(())
-/// # }
+/// # Ok(()) }
 /// ```
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()

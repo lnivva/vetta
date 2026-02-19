@@ -19,14 +19,10 @@ pub struct LocalSttStrategy {
 }
 
 impl LocalSttStrategy {
-    /// Create a LocalSttStrategy for a local gRPC service using the given UNIX socket path.
+    /// Create a LocalSttStrategy that will connect to a local gRPC speech-to-text service via a UNIX domain socket.
     ///
-    /// The provided `socket_path` is converted to a `String` and must point to an existing filesystem
-    /// entry; otherwise the function returns `SttError::SocketNotFound`.
-    ///
-    /// # Parameters
-    ///
-    /// - `socket_path`: Path to the UNIX domain socket used to connect to the local speech-to-text service.
+    /// The provided `socket_path` is converted to a `String` and must refer to an existing filesystem entry;
+    /// otherwise the function returns `SttError::SocketNotFound`.
     ///
     /// # Errors
     ///
@@ -62,12 +58,14 @@ impl LocalSttStrategy {
         Ok(Self { socket_path: path })
     }
 
-    /// Builds a gRPC SpeechToTextClient connected to the strategy's configured Unix domain socket.
+    /// Create a gRPC SpeechToTextClient connected over the strategy's configured Unix domain socket.
+    ///
+    /// The returned client speaks to the local STT service via the Unix domain socket path stored in
+    /// this strategy. Connection and channel setup errors are propagated as `SttError`.
     ///
     /// # Returns
     ///
-    /// A `SpeechToTextClient<tonic::transport::Channel>` connected to the stored socket on success, or
-    /// an `SttError` if the socket connection or channel setup fails.
+    /// A `SpeechToTextClient<tonic::transport::Channel>` connected to the configured socket.
     ///
     /// # Examples
     ///
@@ -102,19 +100,21 @@ impl LocalSttStrategy {
 impl SpeechToText for LocalSttStrategy {
     /// Transcribes an audio file using the local gRPC speech-to-text service and returns a stream of transcript chunks.
     ///
-    /// If the file at `audio_path` does not exist, this returns `Err(SttError::AudioFileNotFound(path))`. Errors produced by the remote service are returned as `Err(SttError::Service(...))`.
+    /// If the audio file does not exist, returns `SttError::AudioFileNotFound(path)`. Errors produced by the remote service are returned as `SttError::Service`.
     ///
     /// # Arguments
-    /// * `audio_path` - Path to the audio file to transcribe; must exist on the filesystem.
+    ///
+    /// * `audio_path` - Path to the audio file to transcribe.
     /// * `options` - Transcription options (language, diarization, number of speakers, initial prompt).
     ///
     /// # Returns
-    /// A stream that yields `TranscriptChunk` items; service errors are returned as `SttError::Service`.
+    ///
+    /// A stream yielding `Result<TranscriptChunk, SttError>` items; each successful item is a `TranscriptChunk`.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use futures::StreamExt;
+    /// use futures::StreamExt;
     /// # async fn example(strategy: &crate::stt::local::LocalSttStrategy) -> Result<(), Box<dyn std::error::Error>> {
     /// let mut stream = strategy.transcribe("audio.wav", Default::default()).await?;
     /// while let Some(item) = stream.next().await {

@@ -56,15 +56,15 @@ def servicer(mock_whisper_model):
 
 def make_request(audio_path="/tmp/test.mp3", language="en", initial_prompt=""):
     """
-    Create a MagicMock request object with audio_path, language, and an options.initial_prompt.
+    Create a MagicMock request object with `audio_path`, `language`, and `options.initial_prompt` set.
     
     Parameters:
         audio_path (str): Path to the audio file. Default "/tmp/test.mp3".
         language (str): Language code for transcription. Default "en".
-        initial_prompt (str): Initial prompt to include on the request options. Default "".
+        initial_prompt (str): Initial prompt to attach as `options.initial_prompt`. Default "".
     
     Returns:
-        MagicMock: A mock request object with attributes `audio_path`, `language`, and `options.initial_prompt`.
+        MagicMock: Mock request object with attributes `audio_path`, `language`, and `options` (which has `initial_prompt`).
     """
     options = MagicMock()
     options.initial_prompt = initial_prompt
@@ -136,6 +136,11 @@ class TestWhisperServicer:
         assert len(chunks) == 2
 
     def test_segment_with_no_words(self, servicer, mock_whisper_model):
+        """
+        Verify Transcribe yields an empty words list when a returned segment has no words.
+        
+        Creates a mock segment whose `words` attribute is None and ensures the servicer's Transcribe method produces a TranscriptChunk with an empty `words` list rather than raising an error.
+        """
         seg = MagicMock()
         seg.start, seg.end, seg.text = 0.0, 2.0, "no words segment"
         seg.avg_logprob, seg.words = -0.1, None

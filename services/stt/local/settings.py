@@ -79,10 +79,10 @@ def _detect_os() -> str:
 
 def _cuda_available() -> bool:
     """
-    Check whether the CTranslate2 CUDA backend is available.
+    Detect whether a CTranslate2 CUDA backend is available.
     
     Returns:
-        True if the installed CTranslate2 reports "cuda" as a supported compute type, False otherwise (including when importing CTranslate2 or querying support raises an exception).
+        `True` if CTranslate2 is importable and reports `cuda` as a supported compute type, `False` otherwise.
     """
     try:
         import ctranslate2
@@ -93,12 +93,12 @@ def _cuda_available() -> bool:
 
 def _physical_core_count() -> int:
     """
-    Return the system's number of physical CPU cores, using safe fallbacks.
+    Detect the system's number of physical CPU cores, using safe fallbacks.
     
-    Attempts to use psutil to obtain the physical (not logical) core count. If psutil is unavailable or does not provide a value, falls back to os.cpu_count(); if that is also unavailable, returns 4.
+    Attempts to use psutil.cpu_count(logical=False); if that is unavailable or returns None, falls back to os.cpu_count(); if that is also unavailable, returns 4.
     
     Returns:
-        int: The detected number of physical CPU cores, or 4 if detection fails.
+        int: Detected number of physical CPU cores, or 4 if detection fails.
     """
     try:
         # psutil gives physical (not logical) cores
@@ -137,14 +137,16 @@ def _resolve_device(requested: str) -> Device:
 
 def _resolve_compute_type(requested: str, device: Device) -> ComputeType:
     """
-    Resolve the compute type to use for model inference based on the requested preference and target device.
+    Choose the compute type to use for model inference based on the requested preference and the target device.
+    
+    If `requested` is not "auto", that value is returned. For `device == "cuda"`, the function attempts to query GPU VRAM and selects `"float16"` for GPUs with at least 8000 MB, otherwise `"int8_float16"`; if the VRAM query fails it defaults to `"float16"`. For CPU targets the function selects `"int8"`.
     
     Parameters:
-        requested (str): Requested compute type string or "auto" to let the function choose.
+        requested (str): Requested compute type string or "auto" to let the function decide.
         device (Device): Target device, either "cuda" or "cpu".
     
     Returns:
-        ComputeType: The chosen compute type. If `requested` is not "auto", that value is returned. When `device` is "cuda", available GPU VRAM is queried and `"float16"` is chosen for GPUs with at least 8000 MB VRAM; otherwise `"int8_float16"` is selected (and `"float16"` is used if the VRAM query fails). For CPU targets, `"int8"` is returned.
+        ComputeType: The chosen compute type: `"float16"`, `"int8_float16"`, or `"int8"`.
     """
     if requested != "auto":
         return requested  # type: ignore
@@ -177,13 +179,15 @@ def _resolve_compute_type(requested: str, device: Device) -> ComputeType:
 
 def _resolve_cpu_threads(requested: int) -> int:
     """
-    Select the number of CPU threads to use, returning the requested value if nonzero or an auto-resolved default otherwise.
+    Determine the number of CPU threads to use.
+    
+    If `requested` is nonzero, that value is returned. Otherwise the function chooses half of the machine's physical cores (minimum 1) as a sensible default. May print a detection message showing the detected physical cores and the chosen thread count.
     
     Parameters:
-        requested (int): Requested number of CPU threads. If zero, a default is chosen based on the machine's physical cores.
+        requested (int): Requested number of CPU threads; use 0 to auto-resolve.
     
     Returns:
-        int: The resolved number of CPU threads (at least 1). May print a detection message indicating detected physical cores and the chosen thread count.
+        int: Resolved CPU thread count (at least 1).
     """
     if requested != 0:
         return requested

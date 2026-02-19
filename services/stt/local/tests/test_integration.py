@@ -88,11 +88,13 @@ def grpc_client(grpc_server):
     """
     Provide a SpeechToTextStub connected to the test gRPC server socket.
     
+    Yields a gRPC client stub connected to the server's Unix domain socket. The underlying channel is closed when the fixture is torn down.
+    
     Parameters:
         grpc_server (str): Path to the server's Unix domain socket.
     
     Returns:
-        client (speech_pb2_grpc.SpeechToTextStub): gRPC client stub connected to the server. The underlying channel is closed when the fixture is torn down.
+        client (speech_pb2_grpc.SpeechToTextStub): gRPC client stub connected to the server.
     """
     channel = grpc.insecure_channel(f"unix://{grpc_server}")
     client = speech_pb2_grpc.SpeechToTextStub(channel)
@@ -102,14 +104,14 @@ def grpc_client(grpc_server):
 
 def make_grpc_request(audio_path="/tmp/fake.mp3", language="en"):
     """
-    Builds a TranscribeRequest protobuf for the Whisper gRPC service.
+    Builds a TranscribeRequest for the Whisper gRPC service.
     
     Parameters:
         audio_path (str): Filesystem path to the audio file to transcribe. Defaults to "/tmp/fake.mp3".
         language (str): Language code for transcription (e.g., "en"). Defaults to "en".
     
     Returns:
-        speech_pb2.TranscribeRequest: Request populated with the given audio_path and language, and with TranscribeOptions set to diarization=False, num_speakers=2, and initial_prompt="".
+        speech_pb2.TranscribeRequest: Request populated with the given audio_path and language. The request's TranscribeOptions are set to diarization=False, num_speakers=2, and initial_prompt="".
     """
     return speech_pb2.TranscribeRequest(
         audio_path=audio_path,
@@ -172,7 +174,11 @@ class TestGrpcIntegration:
         assert all(r is not None for r in results)
 
     def test_response_is_streaming(self, grpc_client):
-        """Verify we get an iterator (streaming), not a single response."""
+        """
+        Verify that Transcribe returns a streaming iterator.
+        
+        Asserts the response implements the iteration protocol by having both `__iter__` and `__next__`.
+        """
         response = grpc_client.Transcribe(make_grpc_request())
         # grpc streaming response is an iterator, not a list
         assert hasattr(response, "__iter__")

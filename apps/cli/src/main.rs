@@ -15,7 +15,7 @@ enum CliQuarter {
 }
 
 impl From<CliQuarter> for CoreQuarter {
-    /// Convert a CLI quarter value into the corresponding core domain quarter.
+    /// Converts a CLI quarter value to the corresponding core domain quarter.
     ///
     /// # Examples
     ///
@@ -66,16 +66,15 @@ enum EarningsAction {
     },
 }
 
-/// Application entry point for the vetta CLI.
+/// CLI application entry point that runs the earnings processing pipeline.
 ///
-/// Initializes diagnostic panic handling, parses CLI arguments, and runs the
-/// "earnings process" pipeline: it validates the input media file, connects to
-/// a local Whisper STT service to transcribe the file, streams transcription
-/// segments while printing live progress, and prints final pipeline statuses.
+/// Parses CLI arguments, validates the input media file, transcribes it using a local
+/// Whisper STT service while streaming transcription segments with live progress,
+/// and prints final pipeline statuses.
 ///
 /// # Returns
 ///
-/// `Ok(())` on successful completion; an error diagnostic on failure.
+/// `Ok(())` on successful completion, or an error diagnostic on failure.
 ///
 /// # Examples
 ///
