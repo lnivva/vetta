@@ -29,11 +29,12 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     def __init__(self, settings: Settings):
         """
-        Initializes the WhisperServicer with the specified settings.
-
-        Args:
-            settings (Settings): The application settings containing model
-                configuration, concurrency limits, and inference parameters.
+        Create a WhisperServicer configured from application Settings.
+        
+        Initializes the servicer's inference configuration, computes the maximum allowed audio size (in bytes) from service.max_audio_size_mb, and instantiates the WhisperModel using model and concurrency settings from the provided Settings.
+        
+        Parameters:
+            settings (Settings): Application settings containing model parameters, service limits, and concurrency configuration.
         """
         s = settings
         self.inference = s.inference
@@ -51,7 +52,15 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     def Transcribe(self, request, context):
         """
-        Processes an audio file and yields transcription chunks as a gRPC stream.
+        Stream transcription chunks for the provided audio input.
+        
+        Accepts audio via path, raw bytes, or URI, applies inference settings (language, VAD, beam size, word timestamps, thresholds, and initial prompt), and yields speech_pb2.TranscriptChunk messages for each transcription segment with per-word timing and confidence.
+        
+        Returns:
+            Generator[speech_pb2.TranscriptChunk]: A stream of transcript chunks corresponding to recognized segments.
+        
+        Raises:
+            grpc.RpcError: Aborts with INVALID_ARGUMENT when no valid audio source is provided, when audio exceeds the configured maximum size, or when fetching a remote URI fails.
         """
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None

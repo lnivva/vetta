@@ -24,10 +24,12 @@ logger = logging.getLogger(__name__)
 
 def setup_logging():
     """
-    Configures the root logger to output structured JSON.
+    Configure the root logger to emit structured JSON logs.
     
-    This ensures that all logs across the application are formatted consistently 
-    as JSON strings, making them compatible with log aggregation systems.
+    Sets the root logger level to INFO and, if the root logger has no handlers,
+    adds a StreamHandler formatted with a JsonFormatter containing the fields:
+    asctime, levelname, name, and message. This prevents adding duplicate handlers
+    when called multiple times.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -46,7 +48,12 @@ def setup_logging():
 
 def serve(config_path: str):
     """
-    Initializes and starts the gRPC server with graceful shutdown handling.
+    Start the Whisper gRPC service using settings from the given configuration file.
+    
+    Loads settings from config_path, creates and starts a gRPC server bound to the Unix domain socket specified by settings.service.socket_path, registers the WhisperServicer, sets the socket file permissions to owner read/write (0o600), and installs SIGTERM/SIGINT handlers that perform a graceful shutdown with a 10-second grace period.
+    
+    Parameters:
+        config_path (str): Filesystem path to the configuration file used to load service settings.
     """
     setup_logging()
 
@@ -72,8 +79,9 @@ def serve(config_path: str):
     # --- Graceful Shutdown Logic ---
     def handle_shutdown(signum, frame):
         """
-        Triggered on SIGTERM or SIGINT.
-        Shuts down the server with a grace period for active RPCs.
+        Handle termination signals by stopping the gRPC server and waiting up to 10 seconds for active RPCs to finish.
+        
+        Blocks until shutdown completes.
         """
         logger.info(f"Received signal {signum}, shutting down...")
         # server.stop(grace) returns an event that we can wait for
