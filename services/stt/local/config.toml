@@ -1,6 +1,7 @@
 [service]
 socket_path = "/tmp/whisper.sock"
 log_level = "info"            # debug | info | warn | error
+max_audio_size_mb = 100
 
 [model]
 size = "large-v3"        # tiny | base | small | medium | large-v3

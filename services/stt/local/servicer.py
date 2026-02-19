@@ -37,6 +37,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         """
         s = settings
         self.inference = s.inference
+
+        self.max_audio_bytes = s.service.max_audio_size_mb * 1024 * 1024
+
         self.model = WhisperModel(
             s.model.size,
             device=s.model.device,
@@ -49,19 +52,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
     def Transcribe(self, request, context):
         """
         Processes an audio file and yields transcription chunks as a gRPC stream.
-
-        Args:
-            request (speech_pb2.TranscribeRequest): The gRPC request containing the
-                audio source (path, URI, or bytes) and transcription options.
-            context (grpc.ServicerContext): The gRPC context for the RPC.
-
-        Yields:
-            speech_pb2.TranscriptChunk: A chunk of the transcribed text, including
-                timing, confidence scores, and word-level timestamps.
         """
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None
-
         audio_source_type = request.WhichOneof("audio_source")
 
         if audio_source_type == "audio_path":
@@ -69,17 +62,30 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             log_source = request.audio_path
 
         elif audio_source_type == "audio_data":
+            if len(request.audio_data) > self.max_audio_bytes:
+                return context.abort(
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    f"Audio data exceeds maximum size of {self.max_audio_bytes} bytes"
+                )
             audio_input = io.BytesIO(request.audio_data)
             log_source = "<bytes_payload>"
 
         elif audio_source_type == "audio_uri":
             try:
-                response = requests.get(request.audio_uri, timeout=15)
-                response.raise_for_status()
-                audio_input = io.BytesIO(response.content)
+                with requests.get(request.audio_uri, timeout=15, stream=True) as response:
+                    response.raise_for_status()
+
+                    content_length = response.headers.get('Content-Length')
+                    if content_length and int(content_length) > self.max_audio_bytes:
+                        return context.abort(
+                            grpc.StatusCode.INVALID_ARGUMENT,
+                            f"Remote audio file exceeds maximum size of {self.max_audio_bytes} bytes"
+                        )
+
+                    audio_input = io.BytesIO(response.content)
                 log_source = request.audio_uri
             except requests.RequestException as e:
-                logger.error(f"Failed to fetch audio from URI: {e}")
+                logger.exception("Failed to fetch audio from URI")
                 return context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Failed to fetch audio URI: {e}")
 
         else:

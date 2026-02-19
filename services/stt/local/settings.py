@@ -16,6 +16,7 @@ ComputeType = Literal["float16", "int8_float16", "int8", "float32"]
 class ServiceConfig:
     socket_path: str
     log_level: str
+    max_audio_size_mb: int
 
 
 @dataclass
@@ -202,6 +203,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         service=ServiceConfig(
             socket_path=_env("service", "socket_path", svc.get("socket_path", "/tmp/whisper.sock")),
             log_level=_env("service", "log_level", svc.get("log_level", "info")),
+            max_audio_size_mb=_env("service", "max_audio_size_mb", svc.get("max_audio_size_mb", 100)),
         ),
         model=ModelConfig(
             size=_env("model", "size", mdl.get("size", "large-v3")),
@@ -240,4 +242,5 @@ def _print_summary(s: Settings):
     print(f"  CPU threads  : {s.concurrency.cpu_threads}")
     print(f"  Max workers  : {s.concurrency.max_workers}")
     print(f"  Socket       : {s.service.socket_path}")
+    print(f"  Max Audio Size: {s.service.max_audio_size_mb}MB")
     print("─" * 50)
