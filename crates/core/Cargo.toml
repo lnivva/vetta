@@ -11,6 +11,13 @@ infer.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 miette.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+async-trait.workspace = true
+tonic.workspace = true
+tower.workspace = true
+prost.workspace = true
+hyper-util.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
