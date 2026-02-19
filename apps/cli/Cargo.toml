@@ -11,9 +11,9 @@ name = "vetta"
 path = "src/main.rs"
 
 [dependencies]
+miette = { workspace = true, features = ["fancy"] }
 vetta_core.workspace = true
 colored.workspace = true
-miette.workspace = true
 clap.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
