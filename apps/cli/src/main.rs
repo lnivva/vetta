@@ -111,12 +111,18 @@ async fn run_processing_pipeline(
         core_quarter.to_string().yellow(),
         year.to_string().yellow()
     );
-    println!("   {:<10} {}", "INPUT:".dimmed(), file);
+
+    let file_path = std::fs::canonicalize(&file)
+        .into_diagnostic()
+        .wrap_err("Failed to resolve input path")?;
+    let file_path = file_path.to_string_lossy().to_string();
+
+    println!("   {:<10} {}", "INPUT:".dimmed(), file_path);
     println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path);
     println!();
 
     // ── 1. Validation ──────────────────────────────────────────
-    let file_info = validate_media_file(&file).wrap_err("Validation phase failed")?;
+    let file_info = validate_media_file(&file_path).wrap_err("Validation phase failed")?;
 
     println!("   {}", "✔ VALIDATION PASSED".green().bold());
     println!("   {:<10} {}", "Format:".dimmed(), file_info);
@@ -144,7 +150,7 @@ async fn run_processing_pipeline(
     };
 
     let mut stream = stt
-        .transcribe(&file, options)
+        .transcribe(&file_path, options)
         .await
         .into_diagnostic()
         .wrap_err("Transcription failed")?;
