@@ -1,8 +1,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use miette::{set_panic_hook, Context, Result};
+use miette::{set_panic_hook, Context, IntoDiagnostic, Result};
+use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::validate_media_file;
+use vetta_core::stt::{LocalSttStrategy, SpeechToText, TranscribeOptions};
 
 #[derive(Debug, Clone, ValueEnum)]
 enum CliQuarter {
@@ -55,7 +57,8 @@ enum EarningsAction {
     },
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     set_panic_hook();
 
     let cli = Cli::parse();
@@ -82,6 +85,7 @@ fn main() -> Result<()> {
                 println!("   {:<10} {}", "INPUT:".dimmed(), file);
                 println!();
 
+                // ── 1. Validation ──────────────────────────────────────────
                 let file_info = validate_media_file(&file).wrap_err("Validation phase failed")?;
 
                 println!("   {}", "✔ VALIDATION PASSED".green().bold());
@@ -90,7 +94,54 @@ fn main() -> Result<()> {
 
                 println!("   {}", "Processing Pipeline:".bold().blue());
                 println!("   1. [✔] Validation");
-                println!("   2. [{}] Transcription (Whisper)", "WAITING".yellow());
+                println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
+
+                // ── 2. Transcription ───────────────────────────────────────
+                let stt = LocalSttStrategy::connect("/tmp/whisper.sock")
+                    .await
+                    .into_diagnostic()
+                    .wrap_err(
+                        "Failed to connect to STT service — is the whisper service running?",
+                    )?;
+
+                let options = TranscribeOptions {
+                    language: Some("en".into()),
+                    initial_prompt: Some(
+                        "Earnings call transcript. Financial terminology, \
+                         company names, analyst questions and management responses."
+                            .into(),
+                    ),
+                    diarization: false,
+                    num_speakers: 2,
+                };
+
+                let mut stream = stt
+                    .transcribe(&file, options)
+                    .await
+                    .into_diagnostic()
+                    .wrap_err("Transcription failed")?;
+
+                let mut segment_count = 0u32;
+
+                while let Some(result) = stream.next().await {
+                    let chunk = result
+                        .into_diagnostic()
+                        .wrap_err("Error reading transcript chunk")?;
+
+                    segment_count += 1;
+
+                    // Live progress — overwrite the same line
+                    print!(
+                        "\r   [{:.1}s → {:.1}s] {}",
+                        chunk.start_time,
+                        chunk.end_time,
+                        chunk.text.trim()
+                    );
+                }
+
+                // Clear progress line then print final status
+                println!();
+                println!("   2. [✔] Transcription ({} segments)", segment_count);
                 println!("   3. [{}] Vector Embedding", "WAITING".dimmed());
                 println!();
             }

@@ -15,3 +15,5 @@ vetta_core.workspace = true
 colored.workspace = true
 miette.workspace = true
 clap.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
