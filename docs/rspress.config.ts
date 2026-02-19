@@ -1,15 +1,17 @@
-import {defineConfig} from '@rspress/core';
+import {defineConfig} from "@rspress/core";
 
 export default defineConfig({
     root: ".",
     title: "Vetta",
     description:
         "Institutional-grade financial analysis engine — architecture & design documentation",
-    icon: "/icon.png",
+
+    icon: "/vetta-logo.png",
     logo: {
-        light: "/logo-light.svg",
-        dark: "/logo-dark.svg",
+        light: "/vetta-logo.png",
+        dark: "/vetta-logo.png",
     },
+
     themeConfig: {
         socialLinks: [
             {
@@ -18,10 +20,12 @@ export default defineConfig({
                 content: "https://github.com/lnivva/vetta",
             },
         ],
+
         nav: [
             {text: "Guide", link: "/guide/introduction"},
             {text: "Architecture", link: "/architecture/overview"},
         ],
+
         sidebar: {
             "/guide/": [
                 {
@@ -38,25 +42,17 @@ export default defineConfig({
                     items: [
                         {text: "Overview", link: "/architecture/overview"},
                         {text: "Monorepo Layout", link: "/architecture/monorepo"},
-                        {
-                            text: "Speech-to-Text Pipeline",
-                            link: "/architecture/stt-pipeline",
-                        },
-                        {
-                            text: "STT Strategy Pattern",
-                            link: "/architecture/stt-strategy",
-                        },
+                        {text: "Speech-to-Text Pipeline", link: "/architecture/stt-pipeline"},
+                        {text: "STT Strategy Pattern", link: "/architecture/stt-strategy"},
                         {text: "gRPC Transport", link: "/architecture/grpc-transport"},
-                        {
-                            text: "Python Service",
-                            link: "/architecture/python-service",
-                        },
+                        {text: "Python Service", link: "/architecture/python-service"},
                         {text: "Configuration", link: "/architecture/configuration"},
                         {text: "Decision Log", link: "/architecture/decisions"},
                     ],
                 },
             ],
         },
+
         footer: {
             message: "Vetta Financial Engine",
         },
