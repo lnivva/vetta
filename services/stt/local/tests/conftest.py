@@ -15,6 +15,7 @@ def minimal_config(tmp_path: Path) -> Path:
         [service]
         socket_path = "/tmp/test_whisper.sock"
         log_level   = "info"
+        max_audio_size_mb = 100
 
         [model]
         size         = "small"
@@ -43,8 +44,7 @@ def minimal_config(tmp_path: Path) -> Path:
 @pytest.fixture(scope="module")
 def mock_whisper_model():
     """
-    A mock WhisperModel that returns two fake segments.
-    Attach .transcribe.return_value to customise per-test.
+    A mock WhisperModel that returns a single fake segment.
     """
     fake_word = MagicMock()
     fake_word.start = 0.0
