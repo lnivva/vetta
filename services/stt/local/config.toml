@@ -1,0 +1,34 @@
+[service]
+socket_path = "/tmp/whisper.sock"
+log_level = "info"            # debug | info | warn | error
+max_audio_size_mb = 100
+
+[model]
+size = "large-v3"        # tiny | base | small | medium | large-v3
+download_dir = "/tmp/whisper_models"
+
+# "auto" triggers hardware detection at startup
+device = "auto"            # auto | cuda | cpu
+compute_type = "auto"            # auto | float16 | int8_float16 | int8
+
+[inference]
+beam_size = 5
+vad_filter = true
+vad_min_silence_ms = 500
+no_speech_threshold = 0.6
+log_prob_threshold = -1.0
+compression_ratio_threshold = 2.4
+word_timestamps = true
+initial_prompt = ""    # overridden per-request if provided
+
+[concurrency]
+# max_workers: parallel gRPC request handlers
+# For GPU: 1 (GPU is the bottleneck)
+# For CPU: match cpu_threads or core count
+max_workers = 1
+
+# cpu_threads: CTranslate2 intra-op threads (ignored for CUDA)
+cpu_threads = 0   # 0 = auto-detect (half of physical cores)
+
+# num_workers: faster-whisper internal DataLoader workers
+num_workers = 1

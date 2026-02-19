@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package speech;
+
+service SpeechToText {
+  rpc Transcribe(TranscribeRequest) returns (stream TranscriptChunk);
+}
+
+message TranscribeRequest {
+  oneof audio_source {
+    string path = 1;
+    string uri = 4;
+    bytes  data = 5;
+  }
+
+  string language = 2;
+  TranscribeOptions options = 3;
+}
+
+message TranscribeOptions {
+  bool   diarization = 1;
+  int32  num_speakers = 2;
+  string initial_prompt = 3;
+}
+
+message TranscriptChunk {
+  float          start_time = 1;
+  float          end_time = 2;
+  string         text = 3;
+  string         speaker_id = 4;
+  float          confidence = 5;
+  repeated Word  words = 6;
+}
+
+message Word {
+  float  start_time = 1;
+  float  end_time = 2;
+  string text = 3;
+  float  confidence = 4;
+}
