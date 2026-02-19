@@ -1,6 +1,6 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .build_server(false)
-        .compile_protos(&["../../proto/speech.proto"], &["../../proto"])?;
+        .compile_protos(&["../../proto/speech/speech.proto"], &["../../proto"])?;
     Ok(())
 }

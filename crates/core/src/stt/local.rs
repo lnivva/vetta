@@ -11,7 +11,8 @@ pub mod proto {
 }
 
 use proto::{
-    speech_to_text_client::SpeechToTextClient, TranscribeOptions as ProtoOptions, TranscribeRequest,
+    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
+    TranscribeOptions as ProtoOptions, TranscribeRequest,
 };
 
 pub struct LocalSttStrategy {
@@ -60,7 +61,7 @@ impl SpeechToText for LocalSttStrategy {
         let mut client = self.client().await?;
 
         let request = TranscribeRequest {
-            audio_path: audio_path.to_string(),
+            audio_source: Some(AudioSource::AudioPath(audio_path.to_string())),
             language: options.language.unwrap_or_default(),
             options: Some(ProtoOptions {
                 diarization: options.diarization,

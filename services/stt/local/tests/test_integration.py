@@ -1,8 +1,3 @@
-"""
-Spins up a real gRPC server over a Unix domain socket.
-WhisperModel is mocked — no GPU/model download needed.
-Tests the full request/response cycle.
-"""
 import os
 import threading
 from concurrent import futures
@@ -10,15 +5,14 @@ from unittest.mock import patch
 
 import grpc
 import pytest
-import speech_pb2
-import speech_pb2_grpc
+
 from servicer import WhisperServicer
 from settings import load_settings
+from speech import speech_pb2_grpc, speech_pb2
 
 
 @pytest.fixture(scope="module")
 def grpc_server(tmp_path_factory, mock_whisper_model):
-    # Use a short fixed socket path — pytest tmp paths exceed the 104-char UDS limit on macOS
     sock = f"/tmp/whisper_test_{os.getpid()}.sock"
 
     config = tmp_path_factory.mktemp("config") / "config.toml"
@@ -127,6 +121,5 @@ class TestGrpcIntegration:
     def test_response_is_streaming(self, grpc_client):
         """Verify we get an iterator (streaming), not a single response."""
         response = grpc_client.Transcribe(make_grpc_request())
-        # grpc streaming response is an iterator, not a list
         assert hasattr(response, "__iter__")
         assert hasattr(response, "__next__")

@@ -7,8 +7,13 @@ service SpeechToText {
 }
 
 message TranscribeRequest {
-  string          audio_path = 1;
-  string          language = 2;
+  oneof audio_source {
+    string audio_path = 1;
+    string audio_uri = 4;
+    bytes  audio_data = 5;
+  }
+
+  string language = 2;
   TranscribeOptions options = 3;
 }
 
