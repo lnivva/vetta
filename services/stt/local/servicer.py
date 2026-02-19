@@ -1,7 +1,7 @@
-import speech_pb2
-import speech_pb2_grpc
 from faster_whisper import WhisperModel
 
+import speech_pb2
+import speech_pb2_grpc
 from settings import Settings
 
 

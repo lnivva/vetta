@@ -4,8 +4,8 @@ from concurrent import futures
 from pathlib import Path
 
 import grpc
-import speech_pb2_grpc
 
+import speech_pb2_grpc
 from servicer import WhisperServicer
 from settings import load_settings
 
