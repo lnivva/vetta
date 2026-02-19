@@ -58,8 +58,30 @@ pub enum IngestError {
     Io(#[from] std::io::Error),
 }
 
-/// Validates that an Earnings Call audio/video file is suitable for processing.
-/// Checks existence, size limits, and magic bytes (content type).
+/// Validate a file at the given filesystem path for existence, size, and allowed media MIME type.
+///
+/// Performs these checks: the path exists, the file is non-empty, the file size does not exceed 500 MB,
+/// and the file's content type (determined from magic bytes) is one of the allowed MIME types.
+/// On success returns the detected MIME type and the file size in megabytes formatted as "<mime> (<size>MB)".
+///
+/// # Returns
+///
+/// A `String` containing the detected MIME type and the file size in MB, e.g. `"audio/mpeg (12MB)"`.
+///
+/// # Examples
+///
+/// ```
+/// use std::io::Write;
+/// use tempfile::NamedTempFile;
+///
+/// // Create a small temporary file containing an MP3-like ID3 header.
+/// let mut tmp = NamedTempFile::new().unwrap();
+/// tmp.write_all(b"ID3\x03\x00\x00\x00\x00\x00\x21").unwrap();
+/// let path = tmp.path().to_str().unwrap();
+///
+/// let result = crate::validate_media_file(path).unwrap();
+/// assert!(result.contains("audio/mpeg"));
+/// ```
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 

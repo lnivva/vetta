@@ -7,6 +7,17 @@ from settings import Settings, ServiceConfig, ModelConfig, InferenceConfig, Conc
 
 
 def make_settings(**inference_overrides) -> Settings:
+    """
+    Builds a Settings object with default service, model, inference, and concurrency configurations.
+    
+    The inference defaults (which can be overridden via keyword arguments) are: beam_size, vad_filter, vad_min_silence_ms, no_speech_threshold, log_prob_threshold, compression_ratio_threshold, word_timestamps, and initial_prompt. Any keys provided in inference_overrides replace the corresponding inference default.
+    
+    Parameters:
+        inference_overrides: Keyword overrides applied to the inference configuration.
+    
+    Returns:
+        A Settings instance whose inference configuration reflects the merged defaults and overrides.
+    """
     inference_defaults = dict(
         beam_size=5,
         vad_filter=True,
@@ -28,6 +39,15 @@ def make_settings(**inference_overrides) -> Settings:
 
 @pytest.fixture
 def servicer(mock_whisper_model):
+    """
+    Create a WhisperServicer with the WhisperModel constructor patched to return the provided mock and attach the mock to the servicer for assertions.
+    
+    Parameters:
+        mock_whisper_model: Mock or fake object to be returned by the patched WhisperModel constructor and assigned to the servicer's _model attribute.
+    
+    Returns:
+        WhisperServicer: A servicer instance whose WhisperModel was patched to return `mock_whisper_model` and whose `_model` attribute references `mock_whisper_model`.
+    """
     with patch("servicer.WhisperModel", return_value=mock_whisper_model):
         svc = WhisperServicer(make_settings())
     svc._model = mock_whisper_model  # keep reference for assertions
@@ -35,6 +55,17 @@ def servicer(mock_whisper_model):
 
 
 def make_request(audio_path="/tmp/test.mp3", language="en", initial_prompt=""):
+    """
+    Create a MagicMock request object with audio_path, language, and an options.initial_prompt.
+    
+    Parameters:
+        audio_path (str): Path to the audio file. Default "/tmp/test.mp3".
+        language (str): Language code for transcription. Default "en".
+        initial_prompt (str): Initial prompt to include on the request options. Default "".
+    
+    Returns:
+        MagicMock: A mock request object with attributes `audio_path`, `language`, and `options.initial_prompt`.
+    """
     options = MagicMock()
     options.initial_prompt = initial_prompt
     req = MagicMock()

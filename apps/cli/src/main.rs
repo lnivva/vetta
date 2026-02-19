@@ -15,6 +15,15 @@ enum CliQuarter {
 }
 
 impl From<CliQuarter> for CoreQuarter {
+    /// Convert a CLI quarter value into the corresponding core domain quarter.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let cq = CliQuarter::Q2;
+    /// let core: CoreQuarter = CoreQuarter::from(cq);
+    /// assert_eq!(core, CoreQuarter::Q2);
+    /// ```
     fn from(cli: CliQuarter) -> Self {
         match cli {
             CliQuarter::Q1 => CoreQuarter::Q1,
@@ -57,6 +66,23 @@ enum EarningsAction {
     },
 }
 
+/// Application entry point for the vetta CLI.
+///
+/// Initializes diagnostic panic handling, parses CLI arguments, and runs the
+/// "earnings process" pipeline: it validates the input media file, connects to
+/// a local Whisper STT service to transcribe the file, streams transcription
+/// segments while printing live progress, and prints final pipeline statuses.
+///
+/// # Returns
+///
+/// `Ok(())` on successful completion; an error diagnostic on failure.
+///
+/// # Examples
+///
+/// ```no_run
+/// // Run the compiled binary from a shell:
+/// // $ vetta earnings process /path/to/file.mp3 AAPL 2025 Q1
+/// ```
 #[tokio::main]
 async fn main() -> Result<()> {
     set_panic_hook();
@@ -151,6 +177,13 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Prints the CLI banner header used by the application.
+///
+/// # Examples
+///
+/// ```
+/// print_banner();
+/// ```
 fn print_banner() {
     println!();
     println!("   {}", "VETTA FINANCIAL ENGINE".bold());

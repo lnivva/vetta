@@ -19,6 +19,22 @@ from settings import load_settings
 @pytest.fixture(scope="module")
 def grpc_server(tmp_path_factory, mock_whisper_model):
     # Use a short fixed socket path — pytest tmp paths exceed the 104-char UDS limit on macOS
+    """
+    Start a temporary gRPC server bound to a Unix domain socket for test usage and yield the socket path.
+    
+    This fixture:
+    - Writes a temporary TOML config that points the service to a short Unix socket path.
+    - Patches servicer.WhisperModel to return the provided mock_whisper_model.
+    - Instantiates WhisperServicer, registers it on a real grpc.Server, binds and starts the server, and sets the socket file permissions to 0o600.
+    - On teardown, stops the server and removes the socket file if present.
+    
+    Parameters:
+        tmp_path_factory: pytest tmp_path_factory used to create a temporary config directory.
+        mock_whisper_model: Mock object to be returned by the patched WhisperModel.
+    
+    Returns:
+        sock (str): Filesystem path to the Unix domain socket the server is bound to.
+    """
     sock = f"/tmp/whisper_test_{os.getpid()}.sock"
 
     config = tmp_path_factory.mktemp("config") / "config.toml"
@@ -69,6 +85,15 @@ def grpc_server(tmp_path_factory, mock_whisper_model):
 
 @pytest.fixture(scope="module")
 def grpc_client(grpc_server):
+    """
+    Provide a SpeechToTextStub connected to the test gRPC server socket.
+    
+    Parameters:
+        grpc_server (str): Path to the server's Unix domain socket.
+    
+    Returns:
+        client (speech_pb2_grpc.SpeechToTextStub): gRPC client stub connected to the server. The underlying channel is closed when the fixture is torn down.
+    """
     channel = grpc.insecure_channel(f"unix://{grpc_server}")
     client = speech_pb2_grpc.SpeechToTextStub(channel)
     yield client
@@ -76,6 +101,16 @@ def grpc_client(grpc_server):
 
 
 def make_grpc_request(audio_path="/tmp/fake.mp3", language="en"):
+    """
+    Builds a TranscribeRequest protobuf for the Whisper gRPC service.
+    
+    Parameters:
+        audio_path (str): Filesystem path to the audio file to transcribe. Defaults to "/tmp/fake.mp3".
+        language (str): Language code for transcription (e.g., "en"). Defaults to "en".
+    
+    Returns:
+        speech_pb2.TranscribeRequest: Request populated with the given audio_path and language, and with TranscribeOptions set to diarization=False, num_speakers=2, and initial_prompt="".
+    """
     return speech_pb2.TranscribeRequest(
         audio_path=audio_path,
         language=language,
@@ -107,11 +142,23 @@ class TestGrpcIntegration:
         assert chunks[0].words[0].text == "Hello"
 
     def test_concurrent_requests(self, grpc_client):
-        """Two simultaneous requests shouldn't crash the server."""
+        """
+        Verifies the server handles two concurrent Transcribe requests without error.
+        
+        Starts two threads that each call Transcribe via the provided grpc_client and asserts no exceptions occurred and both calls produced results.
+        """
         results = [None, None]
         errors = []
 
         def call(index):
+            """
+            Invoke the Transcribe RPC and store its streamed response into the shared results list at the given index.
+            
+            This function collects all streamed chunks from grpc_client.Transcribe(make_grpc_request()) into a list and assigns that list to results[index]. If an exception occurs during the RPC or iteration, the exception is appended to the shared errors list.
+            
+            Parameters:
+                index (int): Index in the shared `results` list where the response list will be stored.
+            """
             try:
                 results[index] = list(grpc_client.Transcribe(make_grpc_request()))
             except Exception as e:

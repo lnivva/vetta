@@ -19,6 +19,39 @@ pub struct LocalSttStrategy {
 }
 
 impl LocalSttStrategy {
+    /// Create a LocalSttStrategy for a local gRPC service using the given UNIX socket path.
+    ///
+    /// The provided `socket_path` is converted to a `String` and must point to an existing filesystem
+    /// entry; otherwise the function returns `SttError::SocketNotFound`.
+    ///
+    /// # Parameters
+    ///
+    /// - `socket_path`: Path to the UNIX domain socket used to connect to the local speech-to-text service.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SttError::SocketNotFound(path)` when `socket_path` does not exist.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use std::fs::File;
+    /// use std::path::PathBuf;
+    ///
+    /// // create a temporary socket file path for the example
+    /// let mut p = std::env::temp_dir();
+    /// p.push("example_local_stt_socket.sock");
+    /// // ensure the path exists for the example
+    /// let _ = File::create(&p).unwrap();
+    ///
+    /// let rt = tokio::runtime::Runtime::new().unwrap();
+    /// let strategy = rt.block_on(async {
+    ///     LocalSttStrategy::connect(p.to_string_lossy()).await.unwrap()
+    /// });
+    ///
+    /// // cleanup
+    /// let _ = std::fs::remove_file(p);
+    /// ```
     pub async fn connect(socket_path: impl Into<String>) -> Result<Self, SttError> {
         let path = socket_path.into();
 
@@ -29,6 +62,25 @@ impl LocalSttStrategy {
         Ok(Self { socket_path: path })
     }
 
+    /// Builds a gRPC SpeechToTextClient connected to the strategy's configured Unix domain socket.
+    ///
+    /// # Returns
+    ///
+    /// A `SpeechToTextClient<tonic::transport::Channel>` connected to the stored socket on success, or
+    /// an `SttError` if the socket connection or channel setup fails.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use crate::stt::local::LocalSttStrategy;
+    /// # use crate::stt::SttError;
+    /// #[tokio::test]
+    /// async fn build_client() -> Result<(), SttError> {
+    ///     let strategy = LocalSttStrategy::connect("/tmp/stt.sock").await?;
+    ///     let _client = strategy.client().await?;
+    ///     Ok(())
+    /// }
+    /// ```
     async fn client(&self) -> Result<SpeechToTextClient<tonic::transport::Channel>, SttError> {
         let path = self.socket_path.clone();
 
@@ -48,6 +100,29 @@ impl LocalSttStrategy {
 
 #[async_trait]
 impl SpeechToText for LocalSttStrategy {
+    /// Transcribes an audio file using the local gRPC speech-to-text service and returns a stream of transcript chunks.
+    ///
+    /// If the file at `audio_path` does not exist, this returns `Err(SttError::AudioFileNotFound(path))`. Errors produced by the remote service are returned as `Err(SttError::Service(...))`.
+    ///
+    /// # Arguments
+    /// * `audio_path` - Path to the audio file to transcribe; must exist on the filesystem.
+    /// * `options` - Transcription options (language, diarization, number of speakers, initial prompt).
+    ///
+    /// # Returns
+    /// A stream that yields `TranscriptChunk` items; service errors are returned as `SttError::Service`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use futures::StreamExt;
+    /// # async fn example(strategy: &crate::stt::local::LocalSttStrategy) -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut stream = strategy.transcribe("audio.wav", Default::default()).await?;
+    /// while let Some(item) = stream.next().await {
+    ///     let chunk = item?;
+    ///     println!("{}", chunk.text);
+    /// }
+    /// # Ok(()) }
+    /// ```
     async fn transcribe(
         &self,
         audio_path: &str,

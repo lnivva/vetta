@@ -11,6 +11,14 @@ from settings import load_settings
 
 
 def serve(config_path: str):
+    """
+    Start and run the Speech-to-Text gRPC server using configuration from the provided file.
+    
+    Loads settings from config_path, starts a gRPC server that serves the WhisperServicer on the Unix domain socket defined by the settings, ensures the socket file has owner read/write permissions (0600), and blocks until the server terminates.
+    
+    Parameters:
+        config_path (str): Path to the configuration file used to load server settings.
+    """
     settings = load_settings(config_path)
 
     socket_path = settings.service.socket_path
