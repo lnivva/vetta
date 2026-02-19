@@ -8,6 +8,7 @@ over a Unix domain socket, and handles the service lifecycle.
 import argparse
 import logging
 import os
+import signal
 from concurrent import futures
 from pathlib import Path
 
@@ -45,21 +46,13 @@ def setup_logging():
 
 def serve(config_path: str):
     """
-    Initializes and starts the gRPC server.
-
-    This function sets up the required Unix domain socket, binds the 
-    WhisperServicer to the gRPC server, and keeps the server running 
-    until it is terminated.
-
-    Args:
-        config_path (str): The file path to the TOML configuration file.
+    Initializes and starts the gRPC server with graceful shutdown handling.
     """
     setup_logging()
 
     settings = load_settings(config_path)
     socket_path = settings.service.socket_path
 
-    # Clean up a stale socket file if it exists
     if os.path.exists(socket_path):
         os.unlink(socket_path)
 
@@ -70,14 +63,27 @@ def serve(config_path: str):
         WhisperServicer(settings), server
     )
 
-    # Bind to Unix domain socket instead of TCP port
     server.add_insecure_port(f"unix://{socket_path}")
     server.start()
-
-    # Restrict socket permissions for security
     os.chmod(socket_path, 0o600)
 
-    logger.info("Service started and ready", extra={"socket_path": socket_path})
+    logger.info("Service started", extra={"socket_path": socket_path})
+
+    # --- Graceful Shutdown Logic ---
+    def handle_shutdown(signum, frame):
+        """
+        Triggered on SIGTERM or SIGINT.
+        Shuts down the server with a grace period for active RPCs.
+        """
+        logger.info(f"Received signal {signum}, shutting down...")
+        # server.stop(grace) returns an event that we can wait for
+        stop_event = server.stop(grace=10)
+        stop_event.wait()
+        logger.info("Shutdown complete.")
+
+    # Register signals
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
 
     server.wait_for_termination()
 
