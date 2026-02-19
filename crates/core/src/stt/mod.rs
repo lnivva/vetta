@@ -1,5 +1,5 @@
 mod error;
-mod local;
+pub mod local;
 
 pub use error::SttError;
 pub use local::LocalSttStrategy;

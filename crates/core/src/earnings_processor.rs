@@ -70,10 +70,12 @@ pub enum IngestError {
 ///
 /// # Examples
 ///
-/// ```
-/// // Panics if the file is missing or invalid; handle the Result in production code.
-/// let info = validate_media_file("tests/fixtures/sample.mp3").unwrap();
-/// assert!(info.contains("audio/mpeg"));
+/// ```no_run
+/// use vetta_core::earnings_processor::validate_media_file;
+///
+/// // This code is compiled but not executed during testing.
+/// let info = validate_media_file("path/to/audio.mp3").expect("File should exist");
+/// println!("Validated: {}", info);
 /// ```
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);

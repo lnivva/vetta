@@ -16,7 +16,7 @@ impl fmt::Display for Quarter {
     /// # Examples
     ///
     /// ```
-    /// use crate::Quarter;
+    /// use vetta_core::domain::Quarter;
     /// assert_eq!(format!("{}", Quarter::Q3), "Q3");
     /// ```
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -41,6 +41,7 @@ impl FromStr for Quarter {
     ///
     /// ```
     /// use std::str::FromStr;
+    /// use vetta_core::domain::Quarter;
     ///
     /// assert_eq!(Quarter::from_str("q1").unwrap(), Quarter::Q1);
     /// assert_eq!(Quarter::from_str("Q4").unwrap(), Quarter::Q4);
