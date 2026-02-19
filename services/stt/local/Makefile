@@ -9,6 +9,7 @@ proto:
 	uv run python -m grpc_tools.protoc \
 	   -I $(PROTO_DIR) \
 	   --python_out=$(PROTO_OUT) \
+	   --pyi_out=$(PROTO_OUT) \
 	   --grpc_python_out=$(PROTO_OUT) \
 	   $(PROTOS)
 

@@ -1,7 +1,3 @@
-[toolchain]
-channel = "1.85.0"
-components = ["rustfmt", "clippy"]
-
 [workspace]
 resolver = "2"
 members = [

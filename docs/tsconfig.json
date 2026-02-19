@@ -23,7 +23,8 @@
     "noUnusedParameters": true
   },
   "include": [
-    "",
+    "/*.ts",
+    "/*.tsx",
     "theme",
     "rspress.config.ts"
   ],
