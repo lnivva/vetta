@@ -24,7 +24,7 @@ jobs:
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.85.0 # Required for Edition 2024
+          toolchain: 1.85.0
           components: clippy, rustfmt
 
       - name: Enable Rust Cache

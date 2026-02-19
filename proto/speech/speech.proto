@@ -8,9 +8,9 @@ service SpeechToText {
 
 message TranscribeRequest {
   oneof audio_source {
-    string audio_path = 1;
-    string audio_uri = 4;
-    bytes  audio_data = 5;
+    string path = 1;
+    string uri = 4;
+    bytes  data = 5;
   }
 
   string language = 2;
