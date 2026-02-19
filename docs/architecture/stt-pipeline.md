@@ -63,11 +63,13 @@ the audio reaches the model.
 
 ## File path, not bytes
 
-The `TranscribeRequest` carries an `audio_path` string, not the raw audio bytes.
+The `TranscribeRequest` carries a `path` string in the `audio_source` oneof, not the raw audio bytes.
 
 ```protobuf
 message TranscribeRequest {
-  string audio_path = 1;  // absolute path on shared filesystem
+  oneof audio_source {
+    string path = 1;  // absolute path on shared filesystem
+  }
     ...
 }
 ```
