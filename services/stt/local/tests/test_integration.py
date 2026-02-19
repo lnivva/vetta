@@ -1,4 +1,6 @@
 import os
+import shutil
+import tempfile
 import threading
 from concurrent import futures
 from unittest.mock import patch
@@ -13,7 +15,8 @@ from speech import speech_pb2_grpc, speech_pb2
 
 @pytest.fixture(scope="module")
 def grpc_server(tmp_path_factory, mock_whisper_model):
-    sock = f"/tmp/whisper_test_{os.getpid()}.sock"
+    sock_dir = tempfile.mkdtemp(prefix="whisper_test_", dir="/tmp")
+    sock = os.path.join(sock_dir, "grpc.sock")
 
     config = tmp_path_factory.mktemp("config") / "config.toml"
     config.write_text(f"""\
@@ -59,6 +62,8 @@ def grpc_server(tmp_path_factory, mock_whisper_model):
     server.stop(grace=1)
     if os.path.exists(sock):
         os.unlink(sock)
+    if os.path.isdir(sock_dir):
+        shutil.rmtree(sock_dir, ignore_errors=True)
 
 
 @pytest.fixture(scope="module")
@@ -69,7 +74,11 @@ def grpc_client(grpc_server):
     channel.close()
 
 
-def make_grpc_request(audio_path="/tmp/fake.mp3", language="en"):
+def make_grpc_request(audio_path=None, language="en"):
+    if audio_path is None:
+        fd, audio_path = tempfile.mkstemp(prefix="whisper_test_", suffix=".mp3", dir="/tmp")
+        os.close(fd)
+
     return speech_pb2.TranscribeRequest(
         audio_path=audio_path,
         language=language,
@@ -108,12 +117,14 @@ class TestGrpcIntegration:
         def call(index):
             try:
                 results[index] = list(grpc_client.Transcribe(make_grpc_request()))
-            except Exception as e:
+            except grpc.RpcError as e:
                 errors.append(e)
 
         threads = [threading.Thread(target=call, args=(i,)) for i in range(2)]
-        for t in threads: t.start()
-        for t in threads: t.join()
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
 
         assert not errors
         assert all(r is not None for r in results)
