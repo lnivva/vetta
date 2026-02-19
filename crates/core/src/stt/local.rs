@@ -11,8 +11,8 @@ pub mod proto {
 }
 
 use proto::{
-    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
     TranscribeOptions as ProtoOptions, TranscribeRequest,
+    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
 };
 
 pub struct LocalSttStrategy {

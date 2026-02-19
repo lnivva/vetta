@@ -33,7 +33,7 @@ def make_settings(**inference_overrides) -> Settings:
 def servicer(mock_whisper_model):
     with patch("servicer.WhisperModel", return_value=mock_whisper_model):
         svc = WhisperServicer(make_settings())
-    svc._model = mock_whisper_model
+    svc.model = mock_whisper_model
     return svc
 
 

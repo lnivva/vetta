@@ -1,10 +1,10 @@
 from unittest.mock import patch
 
 import pytest
+
 from settings import (
     load_settings,
     _detect_arch,
-    _detect_os,
     _resolve_device,
     _resolve_compute_type,
     _resolve_cpu_threads,

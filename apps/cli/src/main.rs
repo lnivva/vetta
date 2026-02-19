@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use miette::{set_panic_hook, Context, IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
 use std::io::{self, Write};
 use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
