@@ -81,7 +81,7 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     }
 
     let kind = infer::get_from_path(path)
-        .map_err(|_| IngestError::UnknownType)?
+        .map_err(IngestError::Io)?
         .ok_or(IngestError::UnknownType)?;
 
     if !ALLOWED_MIME_TYPES.contains(&kind.mime_type()) {
