@@ -9,7 +9,18 @@ import pytest
 
 @pytest.fixture
 def minimal_config(tmp_path: Path) -> Path:
-    """A minimal valid config.toml written to a temp dir."""
+    """
+    Create a minimal valid config.toml in a temporary directory.
+    
+    Writes a TOML configuration containing [service], [model], [inference], and [concurrency]
+    sections suitable for tests, and returns the path to the created config file.
+    
+    Parameters:
+        tmp_path (Path): Temporary directory path (pytest tmp_path fixture) where the file will be written.
+    
+    Returns:
+        Path: Path to the written config.toml file.
+    """
     cfg = tmp_path / "config.toml"
     cfg.write_text(textwrap.dedent("""\
         [service]
@@ -44,7 +55,20 @@ def minimal_config(tmp_path: Path) -> Path:
 @pytest.fixture(scope="module")
 def mock_whisper_model():
     """
-    A mock WhisperModel that returns a single fake segment.
+    Create a MagicMock that simulates a WhisperModel returning one transcription segment and language metadata.
+    
+    The mock's transcribe method returns a two-tuple: (segments, info). `segments` is a list with one object that exposes attributes:
+    - start (float), end (float)
+    - text (str) with surrounding whitespace
+    - avg_logprob (float)
+    - words (list) containing one word object with attributes: start (float), end (float), word (str), probability (float)
+    
+    `info` is an object with attributes:
+    - language (str)
+    - language_probability (float)
+    
+    Returns:
+        MagicMock: A mock model whose `transcribe` method returns ([fake_segment], fake_info).
     """
     fake_word = MagicMock()
     fake_word.start = 0.0

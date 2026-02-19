@@ -10,6 +10,23 @@ from speech import speech_pb2
 
 
 def make_settings(**inference_overrides) -> Settings:
+    """
+    Builds a Settings object with sane defaults for service, model, inference, and concurrency.
+    
+    The returned Settings contains default configurations for:
+    - service: socket_path and log_level
+    - model: size, download_dir, device, compute_type
+    - inference: beam_size, vad_filter, vad_min_silence_ms, no_speech_threshold, log_prob_threshold, compression_ratio_threshold, word_timestamps, initial_prompt
+    - concurrency: max_workers, cpu_threads, num_workers
+    
+    Parameters:
+        **inference_overrides: Keyword arguments to override any of the default inference settings
+            (for example: beam_size, vad_filter, vad_min_silence_ms, no_speech_threshold,
+            log_prob_threshold, compression_ratio_threshold, word_timestamps, initial_prompt).
+    
+    Returns:
+        Settings: A Settings instance populated with the defaults merged with any provided inference overrides.
+    """
     inference_defaults = dict(
         beam_size=5,
         vad_filter=True,
@@ -31,6 +48,15 @@ def make_settings(**inference_overrides) -> Settings:
 
 @pytest.fixture
 def servicer(mock_whisper_model):
+    """
+    Create a WhisperServicer with its WhisperModel patched and replaced by the provided mock.
+    
+    Parameters:
+        mock_whisper_model: A mock or stub that will be used in place of the real WhisperModel.
+    
+    Returns:
+        WhisperServicer: A service instance whose `model` attribute is set to `mock_whisper_model`.
+    """
     with patch("servicer.WhisperModel", return_value=mock_whisper_model):
         svc = WhisperServicer(make_settings())
     svc.model = mock_whisper_model
@@ -38,6 +64,17 @@ def servicer(mock_whisper_model):
 
 
 def make_request(audio_path="/tmp/test.mp3", language="en", initial_prompt=""):
+    """
+    Create a mocked gRPC request object configured to represent an audio_path payload.
+    
+    Parameters:
+        audio_path (str): Path that will be set on the mock's `audio_path` attribute (defaults to "/tmp/test.mp3").
+        language (str): Language code to set on the mock's `language` attribute (defaults to "en").
+        initial_prompt (str): Initial prompt string to set on the mock's `options.initial_prompt` (defaults to "").
+    
+    Returns:
+        MagicMock: A MagicMock configured so that `WhichOneof()` returns "audio_path", and it has `audio_path`, `language`, and `options.initial_prompt` populated accordingly.
+    """
     options = MagicMock()
     options.initial_prompt = initial_prompt
     req = MagicMock()

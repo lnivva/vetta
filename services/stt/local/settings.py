@@ -57,16 +57,34 @@ class Settings:
 # ── Hardware Detection ─────────────────────────────────────────────────────────
 
 def _detect_arch() -> str:
+    """
+    Return the canonical CPU architecture name, normalizing ARM variants to "arm64".
+    
+    Returns:
+        str: `"arm64"` for ARM architectures (`"arm64"` or `"aarch64"`), otherwise `"x86_64"`.
+    """
     arch = platform.machine().lower()
     # Normalize arm64 / aarch64 → arm64
     return "arm64" if arch in ("arm64", "aarch64") else "x86_64"
 
 
 def _detect_os() -> str:
+    """
+    Return the current operating system name in lowercase.
+    
+    Returns:
+        os_name (str): Lowercase OS name as given by the runtime (common values include "linux", "darwin", and "windows").
+    """
     return platform.system().lower()  # "linux" | "darwin"
 
 
 def _cuda_available() -> bool:
+    """
+    Check whether CUDA is available to ctranslate2.
+    
+    Returns:
+        `true` if ctranslate2 reports CUDA compute type support, `false` otherwise.
+    """
     try:
         import ctranslate2
         return "cuda" in ctranslate2.get_supported_compute_types("cuda")
@@ -75,6 +93,14 @@ def _cuda_available() -> bool:
 
 
 def _physical_core_count() -> int:
+    """
+    Return the number of physical CPU cores available on the system.
+    
+    Attempts to return the physical core count; if that cannot be determined, returns the logical CPU count; if that is unavailable, returns 4.
+    
+    Returns:
+        int: Number of CPU cores (physical if detectable, otherwise logical or 4).
+    """
     try:
         # psutil gives physical (not logical) cores
         import psutil
@@ -84,6 +110,18 @@ def _physical_core_count() -> int:
 
 
 def _resolve_device(requested: str) -> Device:
+    """
+    Selects the runtime device ("cpu" or "cuda") based on the requested preference and system capabilities.
+    
+    Parameters:
+        requested (str): Use "auto" to detect the best device for the current system; otherwise pass "cpu" or "cuda" to force a device.
+    
+    Returns:
+        str: The chosen device, either "cuda" or "cpu".
+    
+    Notes:
+        If running on Apple Silicon (darwin + arm64) and CUDA is unavailable, the function prints an informational note indicating MPS is not yet supported by CTranslate2 and returns "cpu".
+    """
     if requested != "auto":
         return requested  # type: ignore
 
@@ -102,6 +140,20 @@ def _resolve_device(requested: str) -> Device:
 
 
 def _resolve_compute_type(requested: str, device: Device) -> ComputeType:
+    """
+    Select an appropriate compute type based on the requested preference and target device.
+    
+    If `requested` is not "auto", the same value is returned unchanged. When `requested` is "auto":
+    - For a CUDA device, prefers `"float16"` if the first GPU reports at least 8 GB of VRAM; uses `"int8_float16"` if VRAM is below 8 GB; falls back to `"float16"` if VRAM cannot be queried.
+    - For a CPU device, chooses `"int8"`.
+    
+    Parameters:
+        requested (str): Desired compute type or `"auto"` to select one automatically.
+        device (Device): Target device, either `"cuda"` or `"cpu"`.
+    
+    Returns:
+        ComputeType: One of `"float16"`, `"int8_float16"`, or `"int8"` according to the rules above.
+    """
     if requested != "auto":
         return requested  # type: ignore
 
@@ -132,6 +184,18 @@ def _resolve_compute_type(requested: str, device: Device) -> ComputeType:
 
 
 def _resolve_cpu_threads(requested: int) -> int:
+    """
+    Choose the number of CPU threads to use, returning the requested value or a sensible default when auto-selected.
+    
+    Parameters:
+        requested (int): Number of threads requested; pass 0 to auto-select based on system cores.
+    
+    Returns:
+        int: The chosen number of CPU threads — `requested` if non-zero, otherwise half the number of physical cores (minimum 1).
+    
+    Notes:
+        When auto-selecting, the function prints the detected physical core count and the resolved thread count to stdout.
+    """
     if requested != 0:
         return requested
     # Use half of physical cores — leaves headroom for diarization pipeline
@@ -142,6 +206,16 @@ def _resolve_cpu_threads(requested: int) -> int:
 
 
 def _resolve_max_workers(requested: int, device: Device) -> int:
+    """
+    Selects the maximum number of concurrent workers based on an explicit request and the target device.
+    
+    Parameters:
+        requested (int): If non-zero, this value is used directly as the max workers.
+        device (Device): Target device, either `"cuda"` or `"cpu"`.
+    
+    Returns:
+        int: The chosen max workers — `requested` if non-zero; otherwise `1` when `device` is `"cuda"`, `2` when `device` is `"cpu"`.
+    """
     if requested != 0:
         return requested
     # GPU: no benefit to parallelism (serialized by GPU)
@@ -154,6 +228,17 @@ def _resolve_max_workers(requested: int, device: Device) -> int:
 # e.g. WHISPER_MODEL_SIZE=medium, WHISPER_SERVICE_SOCKET_PATH=/run/whisper.sock
 
 def _env(section: str, key: str, fallback):
+    """
+    Builds an environment variable name from section and key, reads it if present, and returns its value cast to the type of fallback.
+    
+    Parameters:
+        section (str): Section name used to form the environment variable prefix (WHISPER_<SECTION>_<KEY>).
+        key (str): Key name used to form the environment variable suffix (WHISPER_<SECTION>_<KEY>).
+        fallback: Value whose type determines the cast; returned when the environment variable is not set.
+    
+    Returns:
+        The environment variable value cast to the type of `fallback` (`bool`, `int`, `float`, or `str`), or `fallback` if the variable is not present.
+    """
     env_key = f"WHISPER_{section.upper()}_{key.upper()}"
     val = os.environ.get(env_key)
     if val is None:
@@ -171,6 +256,20 @@ def _env(section: str, key: str, fallback):
 # ── Loader ─────────────────────────────────────────────────────────────────────
 
 def load_settings(config_path: str | Path = "config.toml") -> Settings:
+    """
+    Load application settings from a TOML configuration file, applying environment overrides and runtime-detected defaults.
+    
+    Environment variables with the pattern WHISPER_<SECTION>_<KEY> override values in the file; device, compute type, and concurrency defaults are resolved automatically based on the host environment.
+    
+    Parameters:
+        config_path (str | Path): Path to the TOML configuration file. Defaults to "config.toml".
+    
+    Returns:
+        Settings: A populated Settings dataclass containing service, model, inference, and concurrency configurations.
+    
+    Raises:
+        FileNotFoundError: If the specified configuration file does not exist.
+    """
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path.resolve()}")
@@ -234,6 +333,14 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
 
 
 def _print_summary(s: Settings):
+    """
+    Prints a concise, formatted runtime summary of the provided Settings.
+    
+    The summary includes OS and architecture, selected device and compute type, model size, configured CPU threads and max workers, socket path, and maximum audio size in megabytes. Output is written to standard output.
+    
+    Parameters:
+        s (Settings): Settings instance to summarize.
+    """
     print("─" * 50)
     print(f"  OS/Arch      : {_detect_os()} / {_detect_arch()}")
     print(f"  Device       : {s.model.device}")

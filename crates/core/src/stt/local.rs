@@ -20,6 +20,20 @@ pub struct LocalSttStrategy {
 }
 
 impl LocalSttStrategy {
+    /// Create a LocalSttStrategy after verifying the Unix-domain socket path exists.
+    ///
+    /// If the provided path does not exist, this returns `SttError::SocketNotFound`.
+    ///
+    /// # Examples
+    ///
+    /// ```no_run
+    /// # use crate::stt::local::LocalSttStrategy;
+    /// # use crate::stt::SttError;
+    /// # async fn example() -> Result<(), SttError> {
+    /// let strategy = LocalSttStrategy::connect("/var/run/stt.sock").await?;
+    /// # Ok(())
+    /// # }
+    /// ```
     pub async fn connect(socket_path: impl Into<String>) -> Result<Self, SttError> {
         let path = socket_path.into();
 
@@ -30,6 +44,28 @@ impl LocalSttStrategy {
         Ok(Self { socket_path: path })
     }
 
+    /// Create a gRPC SpeechToText client connected to this strategy's Unix-domain socket.
+    ///
+    /// The returned client is configured to communicate with the local speech service
+    /// through the socket path stored in `self.socket_path`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `SttError` if the gRPC endpoint cannot be created or the connection to the
+    /// Unix-domain socket fails.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use crate::stt::local::LocalSttStrategy;
+    /// # use crate::stt::{SttError, TranscribeOptions};
+    /// # async fn _example() -> Result<(), SttError> {
+    /// let strategy = LocalSttStrategy::connect("/tmp/speech.sock").await?;
+    /// let mut client = strategy.client().await?;
+    /// // use `client` to call RPCs...
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn client(&self) -> Result<SpeechToTextClient<tonic::transport::Channel>, SttError> {
         let path = self.socket_path.clone();
 
@@ -49,6 +85,40 @@ impl LocalSttStrategy {
 
 #[async_trait]
 impl SpeechToText for LocalSttStrategy {
+    /// Transcribes a local audio file by calling the configured local gRPC speech-to-text service.
+    ///
+    /// Validates that `audio_path` exists, sends a transcribe request using the provided `options`,
+    /// and returns a stream of transcription chunks produced by the service.
+    ///
+    /// # Errors
+    ///
+    /// - Returns `SttError::AudioFileNotFound` if `audio_path` does not exist.
+    /// - Returns `SttError::Service` with an `invalid_argument` status if `options.num_speakers` cannot
+    ///   be represented as an `i32`.
+    /// - Individual stream items propagate service-side errors as `SttError::Service`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use tokio_stream::StreamExt;
+    /// # async fn example_call(stt: &impl crate::stt::SpeechToText) -> Result<(), crate::stt::SttError> {
+    /// let options = crate::stt::TranscribeOptions {
+    ///     language: Some("en".to_string()),
+    ///     diarization: true,
+    ///     num_speakers: 2,
+    ///     initial_prompt: None,
+    /// };
+    ///
+    /// let mut stream = stt.transcribe("tests/fixtures/sample.wav", options).await?;
+    ///
+    /// while let Some(item) = stream.next().await {
+    ///     let chunk = item?;
+    ///     println!("{}: {}", chunk.start_time, chunk.text);
+    /// }
+    ///
+    /// # Ok(())
+    /// # }
+    /// ```
     async fn transcribe(
         &self,
         audio_path: &str,

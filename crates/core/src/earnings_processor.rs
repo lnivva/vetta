@@ -58,8 +58,23 @@ pub enum IngestError {
     Io(#[from] std::io::Error),
 }
 
-/// Validates that an Earnings Call audio/video file is suitable for processing.
-/// Checks existence, size limits, and magic bytes (content type).
+/// Validates that the file at the given path is a supported audio/video file and returns its MIME type and size.
+///
+/// On success returns a string formatted "<mime_type> (<size_mb>MB)". On failure returns an `IngestError` describing why the file is not acceptable:
+/// - `FileNotFound(path)` when the path does not exist
+/// - `FileEmpty` when the file has zero bytes
+/// - `FileTooLarge { limit, got }` when the file exceeds `MAX_FILE_SIZE_MB`
+/// - `UnknownType` when the file type cannot be determined from its contents
+/// - `InvalidFormat(mime)` when the detected MIME type is not in `ALLOWED_MIME_TYPES`
+/// - `Io(e)` for underlying I/O errors
+///
+/// # Examples
+///
+/// ```
+/// // Panics if the file is missing or invalid; handle the Result in production code.
+/// let info = validate_media_file("tests/fixtures/sample.mp3").unwrap();
+/// assert!(info.contains("audio/mpeg"));
+/// ```
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 
