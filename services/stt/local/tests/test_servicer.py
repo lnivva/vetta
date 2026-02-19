@@ -11,23 +11,7 @@ from speech import speech_pb2
 
 
 def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
-    """
-    Builds a Settings object with sane defaults for service, model, inference, and concurrency.
-    
-    The returned Settings contains default configurations for:
-    - service: socket_path and log_level
-    - model: size, download_dir, device, compute_type
-    - inference: beam_size, vad_filter, vad_min_silence_ms, no_speech_threshold, log_prob_threshold, compression_ratio_threshold, word_timestamps, initial_prompt
-    - concurrency: max_workers, cpu_threads, num_workers
-    
-    Parameters:
-        **inference_overrides: Keyword arguments to override any of the default inference settings
-            (for example: beam_size, vad_filter, vad_min_silence_ms, no_speech_threshold,
-            log_prob_threshold, compression_ratio_threshold, word_timestamps, initial_prompt).
-    
-    Returns:
-        Settings: A Settings instance populated with the defaults merged with any provided inference overrides.
-    """
+    """Builds a Settings object with sane defaults."""
     inference_defaults = dict(
         beam_size=5,
         vad_filter=True,
@@ -49,39 +33,25 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
 
 @pytest.fixture
 def servicer(mock_whisper_model, tmp_path):
-    """
-    Create a WhisperServicer with its WhisperModel patched and replaced by the provided mock.
-    
-    Parameters:
-        mock_whisper_model: A mock or stub that will be used in place of the real WhisperModel.
-    
-    Returns:
-        WhisperServicer: A service instance whose `model` attribute is set to `mock_whisper_model`.
-    """
+    """Create a WhisperServicer with its WhisperModel patched."""
     with patch("servicer.WhisperModel", return_value=mock_whisper_model):
         svc = WhisperServicer(make_settings(tmp_path))
     svc.model = mock_whisper_model
     return svc
 
 
-def make_request(audio_path="test.mp3", language="en", initial_prompt=""):
+def make_request(path="test.mp3", language="en", initial_prompt=""):
     """
-    Create a mocked gRPC request object configured to represent an audio_path payload.
-    
-    Parameters:
-        audio_path (str): Path that will be set on the mock's `audio_path` attribute (defaults to "/tmp/test.mp3").
-        language (str): Language code to set on the mock's `language` attribute (defaults to "en").
-        initial_prompt (str): Initial prompt string to set on the mock's `options.initial_prompt` (defaults to "").
-    
-    Returns:
-        MagicMock: A MagicMock configured so that `WhichOneof()` returns "audio_path", and it has `audio_path`, `language`, and `options.initial_prompt` populated accordingly.
+    Create a mocked gRPC request object configured to represent a 'path' payload.
+    Synchronized with speech.proto 'oneof audio_source'.
     """
     options = MagicMock()
     options.initial_prompt = initial_prompt
     req = MagicMock()
 
-    req.WhichOneof.return_value = "audio_path"
-    req.audio_path = audio_path
+    # The oneof field name in .proto is 'path'
+    req.WhichOneof.return_value = "path"
+    req.path = path
 
     req.language = language
     req.options = options
@@ -106,6 +76,7 @@ class TestWhisperServicer:
     def test_request_initial_prompt_takes_priority(self, servicer, mock_whisper_model):
         list(servicer.Transcribe(make_request(initial_prompt="Custom prompt"), MagicMock()))
         call_kwargs = mock_whisper_model.transcribe.call_args.kwargs
+        # Ensure prompt is passed to the underlying model
         assert call_kwargs["initial_prompt"] == "Custom prompt"
 
     def test_vad_parameters_passed(self, servicer, mock_whisper_model):
@@ -115,32 +86,30 @@ class TestWhisperServicer:
         assert call_kwargs["vad_parameters"]["min_silence_duration_ms"] == 500
 
     def test_audio_data_payload_uses_bytesio(self, servicer, mock_whisper_model):
-        """Verifies raw bytes are wrapped in BytesIO before transcription."""
+        """Verifies raw 'data' bytes are wrapped in BytesIO."""
         req = MagicMock()
-        req.WhichOneof.return_value = "audio_data"
-        req.audio_data = b"fake wav bytes"
+        req.WhichOneof.return_value = "data"  # .proto field is 'data'
+        req.data = b"fake wav bytes"
         req.language = "en"
         req.options.initial_prompt = ""
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        # Check the first argument passed to model.transcribe()
         audio_input = mock_whisper_model.transcribe.call_args[0][0]
         assert isinstance(audio_input, io.BytesIO)
         assert audio_input.read() == b"fake wav bytes"
 
     @patch("servicer.requests.get")
     def test_audio_uri_payload_fetches_file(self, mock_get, servicer, mock_whisper_model):
-        """Verifies URIs are fetched and passed as BytesIO."""
+        """Verifies 'uri' is fetched and passed as BytesIO."""
         mock_response = MagicMock()
         mock_response.content = b"downloaded bytes"
         mock_response.headers = {}
-
         mock_get.return_value.__enter__.return_value = mock_response
 
         req = MagicMock()
-        req.WhichOneof.return_value = "audio_uri"
-        req.audio_uri = "https://example.com/audio.wav"
+        req.WhichOneof.return_value = "uri"  # .proto field is 'uri'
+        req.uri = "https://example.com/audio.wav"
         req.language = "en"
         req.options.initial_prompt = ""
 
@@ -152,7 +121,7 @@ class TestWhisperServicer:
         assert audio_input.read() == b"downloaded bytes"
 
     def test_invalid_audio_source_aborts(self, servicer):
-        """Verifies the service aborts if no valid oneof field is provided."""
+        """Verifies abort if no valid field is set."""
         req = MagicMock()
         req.WhichOneof.return_value = None
         context = MagicMock()

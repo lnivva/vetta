@@ -97,21 +97,14 @@ def grpc_client(grpc_server):
 
 def make_grpc_request(audio_path=None, language="en"):
     """
-    Builds a TranscribeRequest for gRPC tests, optionally creating a temporary MP3 file when no audio_path is provided.
-    
-    Parameters:
-        audio_path (str | None): Path to the audio file to transcribe. If None, a temporary MP3 file is created in /tmp and its path is used.
-        language (str): Language code to request for transcription (default "en").
-    
-    Returns:
-        speech_pb2.TranscribeRequest: A request populated with the given audio path, language, and default TranscribeOptions (diarization disabled, two speakers, empty initial prompt).
+    Builds a TranscribeRequest for gRPC tests.
     """
     if audio_path is None:
         fd, audio_path = tempfile.mkstemp(prefix="whisper_test_", suffix=".mp3", dir="/tmp")
         os.close(fd)
 
     return speech_pb2.TranscribeRequest(
-        audio_path=audio_path,
+        path=audio_path,
         language=language,
         options=speech_pb2.TranscribeOptions(
             diarization=False,

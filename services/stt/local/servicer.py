@@ -54,11 +54,11 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         """
         Stream transcription chunks for the provided audio input.
         
-        Accepts audio via path, raw bytes, or URI, applies inference settings (language, VAD, beam size, word timestamps, thresholds, and initial prompt), and yields speech_pb2.TranscriptChunk messages for each transcription segment with per-word timing and confidence.
-        
+        Accepts audio via path, raw bytes (data), or URI, applies inference settings (language, VAD, beam size, word timestamps, thresholds, and initial prompt), and yields speech_pb2.TranscriptChunk messages for each transcription segment with per-word timing and confidence.
+
         Returns:
             Generator[speech_pb2.TranscriptChunk]: A stream of transcript chunks corresponding to recognized segments.
-        
+
         Raises:
             grpc.RpcError: Aborts with INVALID_ARGUMENT when no valid audio source is provided, when audio exceeds the configured maximum size, or when fetching a remote URI fails.
         """
@@ -66,22 +66,24 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         prompt = request.options.initial_prompt or inf.initial_prompt or None
         audio_source_type = request.WhichOneof("audio_source")
 
-        if audio_source_type == "audio_path":
-            audio_input = request.audio_path
-            log_source = request.audio_path
+        audio_input = None
 
-        elif audio_source_type == "audio_data":
-            if len(request.audio_data) > self.max_audio_bytes:
+        if audio_source_type == "path":
+            audio_input = request.path
+            log_source = request.path
+
+        elif audio_source_type == "data":
+            if len(request.data) > self.max_audio_bytes:
                 return context.abort(
                     grpc.StatusCode.INVALID_ARGUMENT,
                     f"Audio data exceeds maximum size of {self.max_audio_bytes} bytes"
                 )
-            audio_input = io.BytesIO(request.audio_data)
+            audio_input = io.BytesIO(request.data)
             log_source = "<bytes_payload>"
 
-        elif audio_source_type == "audio_uri":
+        elif audio_source_type == "uri":
             try:
-                with requests.get(request.audio_uri, timeout=15, stream=True) as response:
+                with requests.get(request.uri, timeout=15, stream=True) as response:
                     response.raise_for_status()
 
                     content_length = response.headers.get('Content-Length')
@@ -92,7 +94,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                         )
 
                     audio_input = io.BytesIO(response.content)
-                log_source = request.audio_uri
+                log_source = request.uri
             except requests.RequestException as e:
                 logger.exception("Failed to fetch audio from URI")
                 return context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Failed to fetch audio URI: {e}")
