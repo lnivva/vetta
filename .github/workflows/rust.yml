@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install protbuf compiler
+      - name: Install protobuf compiler
         run: sudo apt-get install protobuf-compiler
 
       - name: Build
