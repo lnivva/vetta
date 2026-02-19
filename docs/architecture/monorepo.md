@@ -5,7 +5,7 @@ The structure is designed so that each layer can be understood and developed ind
 
 ## Directory tree
 
-```
+```text
 vetta/
 ├── Cargo.toml                  # Rust workspace root
 ├── Cargo.lock

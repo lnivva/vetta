@@ -26,7 +26,7 @@ The absence of PyTorch also means a significantly smaller Docker image if contai
 
 At startup, `settings.py` detects the available hardware and selects optimal settings:
 
-```
+```text
 startup
   │
   ├─ device=auto?
@@ -46,7 +46,7 @@ or directly in `config.toml`.
 
 The service is designed to be a long-lived process, not a per-request subprocess.
 
-```
+```text
 startup
   └─ load config
   └─ detect hardware → resolve device + compute_type
@@ -62,7 +62,7 @@ stays warm between CLI invocations.
 
 ## Project structure
 
-```
+```text
 services/stt/local/
 ├── .python-version      # 3.12.x — read by uv automatically
 ├── pyproject.toml       # dependencies, build metadata

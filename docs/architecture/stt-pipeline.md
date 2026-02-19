@@ -34,7 +34,7 @@ Segments are yielded as the model processes each internal audio chunk (~30 secon
 
 This maps perfectly to gRPC server-side streaming:
 
-```
+```text
 Rust client                    Python service
     │                               │
     │── TranscribeRequest ─────────►│
