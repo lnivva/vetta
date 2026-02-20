@@ -6,7 +6,13 @@ import grpc
 import pytest
 
 from servicer import WhisperServicer
-from settings import Settings, ServiceConfig, ModelConfig, InferenceConfig, ConcurrencyConfig
+from settings import (
+    Settings,
+    ServiceConfig,
+    ModelConfig,
+    InferenceConfig,
+    ConcurrencyConfig,
+)
 from speech import speech_pb2
 
 
@@ -24,8 +30,12 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
     )
     inference_defaults.update(inference_overrides)
     return Settings(
-        service=ServiceConfig(socket_path=str(tmp_dir / "t.sock"), log_level="info", max_audio_size_mb=10),
-        model=ModelConfig(size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"),
+        service=ServiceConfig(
+            socket_path=str(tmp_dir / "t.sock"), log_level="info", max_audio_size_mb=10
+        ),
+        model=ModelConfig(
+            size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"
+        ),
         inference=InferenceConfig(**inference_defaults),
         concurrency=ConcurrencyConfig(max_workers=1, cpu_threads=2, num_workers=1),
     )
@@ -74,7 +84,11 @@ class TestWhisperServicer:
         assert chunks[0].end_time == pytest.approx(3.5)
 
     def test_request_initial_prompt_takes_priority(self, servicer, mock_whisper_model):
-        list(servicer.Transcribe(make_request(initial_prompt="Custom prompt"), MagicMock()))
+        list(
+            servicer.Transcribe(
+                make_request(initial_prompt="Custom prompt"), MagicMock()
+            )
+        )
         call_kwargs = mock_whisper_model.transcribe.call_args.kwargs
         # Ensure prompt is passed to the underlying model
         assert call_kwargs["initial_prompt"] == "Custom prompt"
@@ -100,7 +114,9 @@ class TestWhisperServicer:
         assert audio_input.read() == b"fake wav bytes"
 
     @patch("servicer.requests.get")
-    def test_audio_uri_payload_fetches_file(self, mock_get, servicer, mock_whisper_model):
+    def test_audio_uri_payload_fetches_file(
+        self, mock_get, servicer, mock_whisper_model
+    ):
         """Verifies 'uri' is fetched and passed as BytesIO."""
         mock_response = MagicMock()
         mock_response.content = b"downloaded bytes"
@@ -115,7 +131,9 @@ class TestWhisperServicer:
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        mock_get.assert_called_once_with("https://example.com/audio.wav", timeout=15, stream=True)
+        mock_get.assert_called_once_with(
+            "https://example.com/audio.wav", timeout=15, stream=True
+        )
         audio_input = mock_whisper_model.transcribe.call_args[0][0]
         assert isinstance(audio_input, io.BytesIO)
         assert audio_input.read() == b"downloaded bytes"
@@ -130,6 +148,5 @@ class TestWhisperServicer:
 
         assert len(result) == 0
         context.abort.assert_called_once_with(
-            grpc.StatusCode.INVALID_ARGUMENT,
-            "No valid audio_source provided"
+            grpc.StatusCode.INVALID_ARGUMENT, "No valid audio_source provided"
         )

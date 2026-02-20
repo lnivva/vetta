@@ -17,13 +17,13 @@ from speech import speech_pb2_grpc, speech_pb2
 def grpc_server(tmp_path_factory, mock_whisper_model):
     """
     Create and start a gRPC server bound to a temporary Unix-domain socket and yield the socket path for tests.
-    
+
     The server is configured with a temporary TOML config, replaces the real WhisperModel with the provided mock, registers the WhisperServicer, and listens on a Unix socket. On teardown the server is stopped and socket files are removed.
-    
+
     Parameters:
         tmp_path_factory: pytest tmp_path_factory used to create temporary configuration files and directories.
         mock_whisper_model: Mock instance used to replace the WhisperModel during tests.
-    
+
     Returns:
         str: Filesystem path to the Unix-domain socket where the gRPC server is listening.
     """
@@ -82,10 +82,10 @@ def grpc_server(tmp_path_factory, mock_whisper_model):
 def grpc_client(grpc_server):
     """
     Provide a SpeechToTextStub gRPC client connected to the Unix-domain socket created by the grpc_server fixture.
-    
+
     Parameters:
         grpc_server (str): Filesystem path to the Unix-domain socket exposed by the grpc_server fixture.
-    
+
     Returns:
         speech_pb2_grpc.SpeechToTextStub: A gRPC client bound to the socket. The underlying channel is closed when the fixture is torn down.
     """
@@ -100,7 +100,9 @@ def make_grpc_request(audio_path=None, language="en"):
     Builds a TranscribeRequest for gRPC tests.
     """
     if audio_path is None:
-        fd, audio_path = tempfile.mkstemp(prefix="whisper_test_", suffix=".mp3", dir="/tmp")
+        fd, audio_path = tempfile.mkstemp(
+            prefix="whisper_test_", suffix=".mp3", dir="/tmp"
+        )
         os.close(fd)
 
     return speech_pb2.TranscribeRequest(
@@ -136,7 +138,7 @@ class TestGrpcIntegration:
     def test_concurrent_requests(self, grpc_client):
         """
         Ensure two concurrent Transcribe requests complete without errors.
-        
+
         Runs two threads that call the gRPC Transcribe method simultaneously and asserts no RpcError was raised and both calls produced results.
         """
         results = [None, None]
@@ -145,10 +147,10 @@ class TestGrpcIntegration:
         def call(index):
             """
             Perform a Transcribe RPC and store the streamed chunks or record any RpcError.
-            
+
             Parameters:
                 index (int): Index into the shared `results` list where the list of response chunks will be stored. On RpcError, the exception is appended to the shared `errors` list.
-            
+
             Returns:
                 None
             """

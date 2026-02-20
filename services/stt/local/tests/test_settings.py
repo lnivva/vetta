@@ -81,7 +81,9 @@ class TestHardwareDetection:
 
     def test_resolve_compute_auto_cuda_nvidia_smi_fails(self):
         # If nvidia-smi is not available, should default to float16 safely
-        with patch("settings.subprocess.check_output", side_effect=Exception("not found")):
+        with patch(
+            "settings.subprocess.check_output", side_effect=Exception("not found")
+        ):
             result = _resolve_compute_type("auto", "cuda")
         assert result == "float16"
 
@@ -106,12 +108,15 @@ class TestHardwareDetection:
         with patch("settings._physical_core_count", return_value=1):
             assert _resolve_cpu_threads(0) == 1  # floor at 1
 
-    @pytest.mark.parametrize("raw,expected", [
-        ("arm64", "arm64"),
-        ("aarch64", "arm64"),
-        ("x86_64", "x86_64"),
-        ("AMD64", "x86_64"),
-    ])
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("arm64", "arm64"),
+            ("aarch64", "arm64"),
+            ("x86_64", "x86_64"),
+            ("AMD64", "x86_64"),
+        ],
+    )
     def test_arch_normalization(self, raw, expected):
         with patch("platform.machine", return_value=raw):
             assert _detect_arch() == expected

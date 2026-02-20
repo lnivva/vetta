@@ -18,6 +18,9 @@ proto:
 setup:
 	uv sync
 
+format:
+	uv run ruff format .
+
 test:
 	uv run pytest -v
 

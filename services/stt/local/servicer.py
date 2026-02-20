@@ -30,9 +30,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
     def __init__(self, settings: Settings):
         """
         Create a WhisperServicer configured from application Settings.
-        
+
         Initializes the servicer's inference configuration, computes the maximum allowed audio size (in bytes) from service.max_audio_size_mb, and instantiates the WhisperModel using model and concurrency settings from the provided Settings.
-        
+
         Parameters:
             settings (Settings): Application settings containing model parameters, service limits, and concurrency configuration.
         """
@@ -53,7 +53,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
     def Transcribe(self, request, context):
         """
         Stream transcription chunks for the provided audio input.
-        
+
         Accepts audio via path, raw bytes (data), or URI, applies inference settings (language, VAD, beam size, word timestamps, thresholds, and initial prompt), and yields speech_pb2.TranscriptChunk messages for each transcription segment with per-word timing and confidence.
 
         Returns:
@@ -76,7 +76,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             if len(request.data) > self.max_audio_bytes:
                 return context.abort(
                     grpc.StatusCode.INVALID_ARGUMENT,
-                    f"Audio data exceeds maximum size of {self.max_audio_bytes} bytes"
+                    f"Audio data exceeds maximum size of {self.max_audio_bytes} bytes",
                 )
             audio_input = io.BytesIO(request.data)
             log_source = "<bytes_payload>"
@@ -86,21 +86,25 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 with requests.get(request.uri, timeout=15, stream=True) as response:
                     response.raise_for_status()
 
-                    content_length = response.headers.get('Content-Length')
+                    content_length = response.headers.get("Content-Length")
                     if content_length and int(content_length) > self.max_audio_bytes:
                         return context.abort(
                             grpc.StatusCode.INVALID_ARGUMENT,
-                            f"Remote audio file exceeds maximum size of {self.max_audio_bytes} bytes"
+                            f"Remote audio file exceeds maximum size of {self.max_audio_bytes} bytes",
                         )
 
                     audio_input = io.BytesIO(response.content)
                 log_source = request.uri
             except requests.RequestException as e:
                 logger.exception("Failed to fetch audio from URI")
-                return context.abort(grpc.StatusCode.INVALID_ARGUMENT, f"Failed to fetch audio URI: {e}")
+                return context.abort(
+                    grpc.StatusCode.INVALID_ARGUMENT, f"Failed to fetch audio URI: {e}"
+                )
 
         else:
-            return context.abort(grpc.StatusCode.INVALID_ARGUMENT, "No valid audio_source provided")
+            return context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "No valid audio_source provided"
+            )
 
         segments, info = self.model.transcribe(
             audio_input,
@@ -121,8 +125,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 "language": info.language,
                 "language_probability": round(info.language_probability, 2),
                 "audio_source_type": audio_source_type,
-                "audio_source": log_source
-            }
+                "audio_source": log_source,
+            },
         )
 
         for segment in segments:

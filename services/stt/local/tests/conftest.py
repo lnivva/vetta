@@ -7,22 +7,24 @@ import pytest
 
 # ── Shared fixtures ────────────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def minimal_config(tmp_path: Path) -> Path:
     """
     Create a minimal valid config.toml in a temporary directory.
-    
+
     Writes a TOML configuration containing [service], [model], [inference], and [concurrency]
     sections suitable for tests, and returns the path to the created config file.
-    
+
     Parameters:
         tmp_path (Path): Temporary directory path (pytest tmp_path fixture) where the file will be written.
-    
+
     Returns:
         Path: Path to the written config.toml file.
     """
     cfg = tmp_path / "config.toml"
-    cfg.write_text(textwrap.dedent("""\
+    cfg.write_text(
+        textwrap.dedent("""\
         [service]
         socket_path = "/tmp/test_whisper.sock"
         log_level   = "info"
@@ -48,7 +50,8 @@ def minimal_config(tmp_path: Path) -> Path:
         max_workers = 1
         cpu_threads = 2
         num_workers = 1
-    """))
+    """)
+    )
     return cfg
 
 
@@ -56,17 +59,17 @@ def minimal_config(tmp_path: Path) -> Path:
 def mock_whisper_model():
     """
     Create a MagicMock that simulates a WhisperModel returning one transcription segment and language metadata.
-    
+
     The mock's transcribe method returns a two-tuple: (segments, info). `segments` is a list with one object that exposes attributes:
     - start (float), end (float)
     - text (str) with surrounding whitespace
     - avg_logprob (float)
     - words (list) containing one word object with attributes: start (float), end (float), word (str), probability (float)
-    
+
     `info` is an object with attributes:
     - language (str)
     - language_probability (float)
-    
+
     Returns:
         MagicMock: A mock model whose `transcribe` method returns ([fake_segment], fake_info).
     """
