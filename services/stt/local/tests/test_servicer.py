@@ -116,7 +116,7 @@ class TestWhisperServicer:
 
     @patch("servicer.requests.get")
     def test_audio_uri_payload_fetches_file(
-            self, mock_get, servicer, mock_whisper_model
+        self, mock_get, servicer, mock_whisper_model
     ):
         """Verifies 'uri' is fetched and passed as BytesIO."""
         mock_response = MagicMock()
