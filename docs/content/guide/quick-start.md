@@ -64,7 +64,7 @@ The pipeline prints live progress as transcript chunks stream back:
    ======================
 
    TARGET:    XXXX Q3 2024
-   INPUT:     /path/to/earnings.mp3
+   INPUT:     /tmp/test.mp3
 
    ✔ VALIDATION PASSED
    Format:    audio/mpeg
