@@ -14,7 +14,7 @@
     "@rspress/core": "^2.0.2"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.3.8",
+    "@biomejs/biome": "2.4.3",
     "@types/node": "^22.8.1",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
