@@ -32,7 +32,7 @@ You will see the ready line when it is accepting connections:
 [whisper] ready on /tmp/whisper.sock
 ```
 
-## 3. Generating a test audio file
+## 3. Generating a test audio file (MacOS Only)
 
 ```bash
 say -v Samantha \
@@ -46,7 +46,8 @@ ffmpeg -i /tmp/test.aiff /tmp/test.mp3
 ## 4. Process test audio file
 
 ::: tip Platform Support
-The `say` command below is macOS-specific. Linux/Windows users can skip to Section 4 and use any MP3 file for testing.
+The `say` command above is macOS-specific. Linux/Windows users should instead pass their MP3 using the
+`--file /path/to/file.mp3` flag.  
 :::
 
 ```bash
