@@ -58,25 +58,6 @@ pub enum IngestError {
     Io(#[from] std::io::Error),
 }
 
-/// Validates that the file at the given path is a supported audio/video file and returns its MIME type and size.
-///
-/// On success returns a string formatted "<mime_type> (<size_mb>MB)". On failure returns an `IngestError` describing why the file is not acceptable:
-/// - `FileNotFound(path)` when the path does not exist
-/// - `FileEmpty` when the file has zero bytes
-/// - `FileTooLarge { limit, got }` when the file exceeds `MAX_FILE_SIZE_MB`
-/// - `UnknownType` when the file type cannot be determined from its contents
-/// - `InvalidFormat(mime)` when the detected MIME type is not in `ALLOWED_MIME_TYPES`
-/// - `Io(e)` for underlying I/O errors
-///
-/// # Examples
-///
-/// ```no_run
-/// use vetta_core::earnings_processor::validate_media_file;
-///
-/// // This code is compiled but not executed during testing.
-/// let info = validate_media_file("path/to/audio.mp3").expect("File should exist");
-/// println!("Validated: {}", info);
-/// ```
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 
@@ -114,101 +95,94 @@ mod tests {
     use std::io::Write;
     use tempfile::NamedTempFile;
 
-    #[test]
-    fn test_file_not_found() {
-        let result = validate_media_file("non_existent_file.mp3");
-        assert!(matches!(result, Err(IngestError::FileNotFound(_))));
+    fn write_temp(bytes: &[u8]) -> NamedTempFile {
+        let mut file = NamedTempFile::new().unwrap();
+        file.write_all(bytes).unwrap();
+        file.flush().unwrap();
+        file
+    }
+
+    fn validate_path(path: &Path) -> Result<String, IngestError> {
+        validate_media_file(path.to_str().expect("utf-8 temp path"))
     }
 
     #[test]
-    fn test_file_empty() {
+    fn file_not_found_includes_path() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("non_existent_file.mp3");
+        let path_str = path.to_str().unwrap();
+        let err = validate_media_file(path_str).unwrap_err();
+        assert!(matches!(err, IngestError::FileNotFound(p) if p == path_str));
+    }
+
+    #[test]
+    fn empty_file_is_rejected() {
         let file = NamedTempFile::new().unwrap();
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
-        assert!(matches!(result, Err(IngestError::FileEmpty)));
+        let err = validate_path(file.path()).unwrap_err();
+        assert!(matches!(err, IngestError::FileEmpty));
     }
 
     #[test]
-    fn test_file_too_large() {
+    fn file_too_large_reports_limit_and_got() {
         let mut file = NamedTempFile::new().unwrap();
-        // 501 MB
-        let size = (MAX_FILE_SIZE_MB + 1) * 1024 * 1024;
-        file.as_file_mut().set_len(size).unwrap();
 
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
-
-        match result {
-            Err(IngestError::FileTooLarge { limit, got }) => {
-                assert_eq!(limit, MAX_FILE_SIZE_MB);
-                assert_eq!(got, MAX_FILE_SIZE_MB + 1);
-            }
-            _ => panic!("Expected FileTooLarge error, got {:?}", result),
-        }
-    }
-
-    #[test]
-    fn test_invalid_format() {
-        let mut file = NamedTempFile::new().unwrap();
-        // Writing some text content (plain text is not in ALLOWED_MIME_TYPES)
-        // However, 'infer' might return None if it doesn't recognize it as any known type.
-        // Let's write something that is a known type but not allowed, e.g., a PDF.
-        // PDF magic bytes: %PDF- (25 50 44 46 2D)
-        file.write_all(b"%PDF-1.4\n").unwrap();
-
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
-
-        match result {
-            Err(IngestError::InvalidFormat(mime)) => {
-                assert_eq!(mime, "application/pdf");
-            }
-            _ => panic!("Expected InvalidFormat error, got {:?}", result),
-        }
-    }
-
-    #[test]
-    fn test_unknown_type() {
-        let mut file = NamedTempFile::new().unwrap();
-        // Write some random bytes that don't match any known magic bytes
-        file.write_all(&[0x00, 0x01, 0x02, 0x03, 0x04]).unwrap();
-
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
-
-        assert!(matches!(result, Err(IngestError::UnknownType)));
-    }
-
-    #[test]
-    fn test_valid_mp3() {
-        let mut file = NamedTempFile::new().unwrap();
-        // MP3 magic bytes can be complex, but 'infer' recognizes ID3 tag (49 44 33)
-        file.write_all(&[0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+        file.as_file_mut()
+            .set_len((MAX_FILE_SIZE_MB + 1) * 1024 * 1024)
             .unwrap();
 
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
+        let err = validate_path(file.path()).unwrap_err();
 
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("audio/mpeg"));
+        assert!(matches!(
+            err,
+            IngestError::FileTooLarge { limit, got }
+                if limit == MAX_FILE_SIZE_MB && got == MAX_FILE_SIZE_MB + 1
+        ));
     }
 
     #[test]
-    fn test_valid_wav() {
-        let mut file = NamedTempFile::new().unwrap();
-        // WAV magic bytes: RIFF (52 49 46 46) ... WAVE (57 41 56 45)
-        // RIFF + 4 bytes size + WAVE
-        let mut wav_data = vec![0u8; 12];
-        wav_data[0..4].copy_from_slice(b"RIFF");
-        wav_data[8..12].copy_from_slice(b"WAVE");
-        file.write_all(&wav_data).unwrap();
+    fn rejects_disallowed_format_pdf() {
+        let file = write_temp(b"%PDF-1.4\n...payload...");
+        let err = validate_path(file.path()).unwrap_err();
+        assert!(matches!(err, IngestError::InvalidFormat(m) if m == "application/pdf"));
+    }
 
-        let path = file.path().to_str().unwrap();
-        let result = validate_media_file(path);
+    #[test]
+    fn rejects_unknown_type() {
+        let file = write_temp(&[0x00, 0x01, 0x02, 0x03, 0x04, 0xFF, 0xEE, 0xDD]);
+        let err = validate_path(file.path()).unwrap_err();
+        assert!(matches!(err, IngestError::UnknownType));
+    }
 
-        match &result {
-            Ok(msg) => assert!(msg.contains("audio/wav") || msg.contains("audio/x-wav")),
-            Err(e) => panic!("Expected Ok, got Err: {:?}", e),
+    #[test]
+    fn accepts_allowed_formats_smoke() {
+        let cases: &[(&str, &[u8])] = &[
+            ("mp3 (ID3)", b"ID3\x03\x00\x00\x00\x00\x00\x21some_payload"),
+            ("wav (RIFF/WAVE)", b"RIFF\x24\x00\x00\x00WAVEfmt "),
+            (
+                "mp4 (ftyp)",
+                b"\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom",
+            ),
+        ];
+
+        for (name, bytes) in cases {
+            let file = write_temp(bytes);
+            let res = validate_path(file.path());
+            assert!(res.is_ok(), "expected Ok for {name}, got {res:?}");
         }
+    }
+
+    #[test]
+    fn ok_message_includes_mime_and_size_suffix() {
+        let file = write_temp(b"ID3\x03\x00\x00\x00\x00\x00\x21some_payload");
+        let msg = validate_path(file.path()).unwrap();
+
+        assert!(
+            msg.contains("audio/mpeg"),
+            "expected audio/mpeg in message, got: {msg}"
+        );
+        assert!(
+            msg.ends_with("MB)"),
+            "expected message to end with 'MB)', got: {msg}"
+        );
     }
 }

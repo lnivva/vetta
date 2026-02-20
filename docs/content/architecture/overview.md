@@ -1,90 +1,97 @@
-# Architecture Overview
+# High-level overview
+
+Vetta is structured as a small **app layer** (a CLI today) sitting on top of a reusable **core library**. The core
+library defines **stable stage interfaces** (traits) for pipeline steps like speech-to-text, and uses **provider
+adapters** to connect those interfaces to concrete implementations (local services or cloud APIs).
+
+This separation keeps user-facing code focused on orchestration and UX, while allowing the underlying providers (
+transport, runtime, deployment, vendors) to change without rewriting the pipeline.
 
 ## System diagram
 
-```
-┌─────────────────────────────────────────────────┐
-│  CLI Crate  (apps/cli)                          │
-│    └─ clap commands → pipeline stages           │
-└────────────────┬────────────────────────────────┘
-                 │  calls trait methods
-┌────────────────▼────────────────────────────────┐
-│  Core Crate  (crates/core)                      │
-│                                                 │
-│  trait SpeechToText {                           │
-│    async fn transcribe(audio, options)          │
-│      -> TranscriptStream                        │
-│  }                                              │
-│                                                 │
-│  ┌──────────────────┐  ┌──────────────────────┐ │
-│  │ LocalSttStrategy │  │ CloudSttStrategy     │ │
-│  │ (gRPC client,    │  │ (gRPC client,        │ │
-│  │  Unix socket)    │  │  TLS + auth header)  │ │
-│  └────────┬─────────┘  └──────────────────────┘ │
-└───────────┼─────────────────────────────────────┘
-            │  gRPC server-side streaming
-            │  unix:///tmp/whisper.sock
-            │
-┌───────────▼─────────────────────────────────────┐
-│  Python gRPC Service  (services/stt/local)      │
-│  - faster-whisper (large-v3 via CTranslate2)    │
-│  - model loaded once at startup                 │
-│  - VAD filter strips silence                    │
-│  - streams TranscriptChunk messages back        │
-└─────────────────────────────────────────────────┘
-                 │  (future stages)
-┌────────────────▼────────────────────────────────┐
-│  Diarization  →  Embedding  →  MongoDB Atlas    │
-│  pyannote         Voyage AI     Vector Search   │
-└─────────────────────────────────────────────────┘
+```text
+┌───────────────────────────────────────────────┐
+│  App Layer (CLI today, other apps later)      │
+│  - Parses user input                          │
+│  - Orchestrates pipeline stages               │
+│  - Renders progress + diagnostics             │
+└───────────────────────┬───────────────────────┘
+                        │ calls stage interfaces
+┌───────────────────────▼───────────────────────┐
+│  Core Library (crates/core)                   │
+│                                               │
+│  Stage interfaces (traits)                    │
+│    - SpeechToText                             │
+│    - (future) Diarization / Embeddings        │
+│    - (future) Storage                         │
+│                                               │
+│  Provider adapters (implementations)          │
+│    - Local adapter                            │
+│    - Remote/cloud adapter                     │
+│                                               │
+│  Shared domain types                          │
+│    - Quarter, TranscriptChunk, Word, …        │
+└───────────────────────┬───────────────────────┘
+                        │ streaming RPC / SDK
+┌───────────────────────▼───────────────────────┐
+│  External Services / Providers                │
+│  - Speech-to-text service (local or remote)   │
+│  - (future) Diarization service               │
+│  - (future) Embedding provider                │
+│  - (future) Vector store / database           │
+└───────────────────────────────────────────────┘
 ```
 
 ## Layers
 
-### CLI (`apps/cli`)
+### App layer (`apps/cli`)
 
-The user-facing binary. Built with `clap`. Responsible for:
+The user-facing binary (built with `clap`). Responsible for:
 
-- Parsing arguments (ticker, year, quarter, file)
-- Driving the pipeline stages in sequence
-- Rendering live progress to the terminal
-- Propagating errors with `miette` diagnostics
+- Parsing arguments (ticker, year, quarter, file, output options)
+- Driving pipeline stages in sequence
+- Rendering terminal progress
+- Surfacing errors with `miette` diagnostics
 
-The CLI knows nothing about how transcription works internally.
-It holds a `Box<dyn SpeechToText>` and calls `.transcribe()`.
+The CLI does not contain provider-specific transcription logic. It depends on the `SpeechToText` interface and calls
+`transcribe()`.
 
-### Core (`crates/core`)
+### Core library (`crates/core`)
 
-The library crate shared by all apps (CLI today, potentially a server or WASM target later).
-Contains:
+A reusable library crate shared by all entrypoints (CLI today, potentially a server later). Contains:
 
 - **Domain types** — `Quarter`, `TranscriptChunk`, `Word`
-- **The `SpeechToText` trait** — the strategy interface
-- **Strategy implementations** — `LocalSttStrategy` (ships now), `CloudSttStrategy` (future)
-- **Pipeline orchestration** — validation, diarization, embedding (future stages)
+- **Stage interfaces** — e.g. `SpeechToText`
+- **Provider adapters** — implementations of interfaces (e.g., local vs remote)
+- **Pipeline utilities** — validation and stage wiring (future stages may be added here)
 
-### Python STT Service (`services/stt/local`)
+### Provider boundary (service/API)
 
-A gRPC service wrapping `faster-whisper`. Runs as a long-lived process. The model is loaded once at startup — the
-expensive part. Each `Transcribe` RPC call streams segments back as they are produced by the model's internal chunker.
+Speech-to-text is provided by an external component (local process or remote service). The core library talks to it via
+a streaming interface so transcript segments can be consumed incrementally.
 
-### Proto contract (`proto/speech.proto`)
+Implementation details (transport, auth, model/runtime) are intentionally encapsulated behind provider adapters and are
+not part of the core pipeline contract.
 
-The single source of truth for the Rust ↔ Python interface.
-Rust generates client stubs via `tonic-build` at compile time.
-Python generates stubs via `grpc_tools.protoc` at dev setup time (and in CI).
+### Proto / API contract (`proto/speech.proto`) *(if using gRPC)*
 
-## Data flow for a single earnings call
+When gRPC is used, the `.proto` definition is the contract between the core library and the provider implementation.
 
-```
+- Rust generates client stubs at build time (e.g., `tonic-build`)
+- Provider implementations generate server stubs as part of their build/dev workflow
+
+## Data flow (single earnings call)
+
+```text
 1. User runs:  vetta earnings process --file call.mp3 --ticker AAPL ...
-2. CLI validates the file (mime type, extension)
-3. CLI calls LocalSttStrategy::connect("/tmp/whisper.sock")
-4. CLI calls .transcribe("call.mp3", options)
-5. Rust sends TranscribeRequest over the Unix socket
-6. Python service receives request, calls model.transcribe() → lazy generator
-7. Each segment yields a TranscriptChunk back over the gRPC stream
-8. Rust receives chunks one by one, prints live progress
-9. (future) chunks forwarded to diarization stage
-10. (future) diarized chunks embedded and written to MongoDB Atlas
+2. CLI validates the input file (exists, size, supported type)
+3. CLI selects an STT provider adapter (local or remote) based on config
+4. CLI calls SpeechToText::transcribe(file, options)
+5. Core/provider sends a request to the STT service (streaming)
+6. STT service produces transcript segments incrementally
+7. Provider streams TranscriptChunk messages back to the caller
+8. CLI consumes chunks:
+   - optionally writes to --out
+   - optionally prints with --print
+9. (future) transcript forwarded to downstream stages (diarization → embeddings → storage)
 ```

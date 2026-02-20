@@ -15,7 +15,7 @@ proto:
 
 	find $(PROTO_OUT) -name "*_pb2.py" -execdir touch __init__.py \;
 
-setup:
+setup: proto
 	uv sync
 
 format:

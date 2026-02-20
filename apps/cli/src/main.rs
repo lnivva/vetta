@@ -1,7 +1,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
-use std::io::{self, Write};
+use std::path::Path;
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::validate_media_file;
@@ -16,15 +20,6 @@ enum CliQuarter {
 }
 
 impl From<CliQuarter> for CoreQuarter {
-    /// Convert a CLI quarter into the corresponding core domain quarter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let cq = CliQuarter::Q2;
-    /// let core: CoreQuarter = CoreQuarter::from(cq);
-    /// assert_eq!(core, CoreQuarter::Q2);
-    /// ```
     fn from(cli: CliQuarter) -> Self {
         match cli {
             CliQuarter::Q1 => CoreQuarter::Q1,
@@ -42,14 +37,13 @@ impl From<CliQuarter> for CoreQuarter {
     version
 )]
 struct Cli {
-    /// Path to the Whisper Unix Domain Socket (Env: WHISPER_SOCK)
     #[arg(
         long,
         env = "WHISPER_SOCK",
         default_value = "/tmp/whisper.sock",
         global = true
     )]
-    socket: String,
+    socket: PathBuf,
 
     #[command(subcommand)]
     command: Resource,
@@ -69,43 +63,22 @@ enum EarningsAction {
     #[command(about = "Process an audio/video file")]
     Process {
         #[arg(short, long)]
-        file: String,
+        file: PathBuf,
         #[arg(short, long)]
         ticker: String,
         #[arg(short, long)]
         year: u16,
         #[arg(short, long, value_enum)]
         quarter: CliQuarter,
+
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        #[arg(long)]
+        print: bool,
     },
 }
 
-/// CLI entry point that loads environment, sets up a panic hook, parses arguments, and dispatches the selected subcommand.
-///
-/// This function initializes runtime-level behavior (dotenv and panic hook), parses the `Cli` arguments, and routes
-/// the chosen `Resource`/`EarningsAction` to the appropriate processing pipeline.
-///
-/// # Examples
-///
-/// ```
-/// use apps::cli::Cli;
-///
-/// // Simulate invocation of the binary with the `earnings process` subcommand.
-/// let args = vec![
-///     "vettacli",
-///     "earnings",
-///     "process",
-///     "--file",
-///     "call.mp3",
-///     "--ticker",
-///     "ACME",
-///     "--year",
-///     "2024",
-///     "--quarter",
-///     "Q1",
-/// ];
-/// let cli = Cli::parse_from(args);
-/// assert_eq!(cli.socket, std::env::var("WHISPER_SOCK").unwrap_or_else(|_| "/tmp/whisper.sock".into()));
-/// ```
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv().ok();
@@ -120,8 +93,11 @@ async fn main() -> Result<()> {
                 ticker,
                 year,
                 quarter,
+                out,
+                print,
             } => {
-                run_processing_pipeline(file, ticker, year, quarter, &cli.socket).await?;
+                run_processing_pipeline(file, ticker, year, quarter, &cli.socket, out, print)
+                    .await?;
             }
         },
     }
@@ -129,40 +105,14 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Runs the end-to-end processing pipeline for an earnings call media file.
-///
-/// Performs media validation, connects to a local STT service over the provided socket,
-/// streams transcription results while printing live progress, and reports pipeline stage status.
-/// On success the pipeline completes after transcription and prints a brief summary; on failure
-/// returns a diagnostic error describing the failing phase.
-///
-/// # Errors
-///
-/// Returns an error if the input path cannot be resolved, validation fails, the STT service
-/// cannot be reached, or if reading/transcribing chunks fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use vetta_core::cli::CliQuarter;
-/// # use std::error::Error;
-/// # async fn run() -> Result<(), Box<dyn Error>> {
-/// // Call the pipeline with an audio file, ticker, year, quarter and socket path.
-/// run_processing_pipeline(
-///     "tests/fixtures/earnings_call.mp3".into(),
-///     "ACME".into(),
-///     2025,
-///     CliQuarter::Q1,
-///     "/tmp/whisper.sock",
-/// ).await?;
-/// # Ok(()) }
-/// ```
 async fn run_processing_pipeline(
-    file: String,
+    file: PathBuf,
     ticker: String,
     year: u16,
     quarter: CliQuarter,
-    socket_path: &str,
+    socket_path: &Path,
+    out: Option<PathBuf>,
+    print: bool,
 ) -> Result<()> {
     let core_quarter: CoreQuarter = quarter.into();
 
@@ -179,14 +129,13 @@ async fn run_processing_pipeline(
     let file_path = std::fs::canonicalize(&file)
         .into_diagnostic()
         .wrap_err("Failed to resolve input path")?;
-    let file_path = file_path.to_string_lossy().to_string();
 
-    println!("   {:<10} {}", "INPUT:".dimmed(), file_path);
-    println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path);
+    println!("   {:<10} {}", "INPUT:".dimmed(), file_path.display());
+    println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path.display());
     println!();
 
-    // ── 1. Validation ──────────────────────────────────────────
-    let file_info = validate_media_file(&file_path).wrap_err("Validation phase failed")?;
+    let file_info =
+        validate_media_file(&file_path.to_string_lossy()).wrap_err("Validation phase failed")?;
 
     println!("   {}", "✔ VALIDATION PASSED".green().bold());
     println!("   {:<10} {}", "Format:".dimmed(), file_info);
@@ -196,17 +145,20 @@ async fn run_processing_pipeline(
     println!("   1. [✔] Validation");
     println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
 
-    // ── 2. Transcription ───────────────────────────────────────
-    let stt = LocalSttStrategy::connect(socket_path)
+    let stt = LocalSttStrategy::connect(socket_path.to_string_lossy())
         .await
         .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to connect to STT service at '{}'", socket_path))?;
+        .wrap_err_with(|| {
+            format!(
+                "Failed to connect to STT service at '{}'",
+                socket_path.display()
+            )
+        })?;
 
     let options = TranscribeOptions {
         language: Some("en".into()),
         initial_prompt: Some(
-            "Earnings call transcript. Financial terminology, \
-             company names, analyst questions and management responses."
+            "Earnings call transcript. Financial terminology, company names, analyst questions and management responses."
                 .into(),
         ),
         diarization: false,
@@ -214,47 +166,50 @@ async fn run_processing_pipeline(
     };
 
     let mut stream = stt
-        .transcribe(&file_path, options)
+        .transcribe(&file_path.to_string_lossy(), options)
         .await
         .into_diagnostic()
         .wrap_err("Transcription failed")?;
 
     let mut segment_count = 0u32;
+    let mut full = String::new();
 
     while let Some(result) = stream.next().await {
         let chunk = result
             .into_diagnostic()
             .wrap_err("Error reading transcript chunk")?;
-
         segment_count += 1;
 
-        print!(
-            "\r   \x1B[K[{:.1}s → {:.1}s] {}",
-            chunk.start_time,
-            chunk.end_time,
-            chunk.text.trim()
-        );
+        let line = chunk.text.trim_end();
+        if !line.is_empty() {
+            full.push_str(line);
+            full.push('\n');
+        }
+
+        print!("\r\x1B[K   Transcribing… {} segments", segment_count);
         io::stdout().flush().into_diagnostic()?;
     }
 
     println!(
-        "\r   \x1B[K   2. [✔] Transcription ({} segments)",
+        "\r\x1B[K   2. [✔] Transcription ({} segments)",
         segment_count
     );
-    println!("   3. [{}] Vector Embedding", "WAITING".dimmed());
-    println!();
+
+    if let Some(out_path) = out {
+        std::fs::write(&out_path, full.as_bytes())
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to write transcript to {}", out_path.display()))?;
+        println!("   {:<10} {}", "OUTPUT:".dimmed(), out_path.display());
+    }
+
+    if print {
+        println!();
+        print!("{full}");
+    }
 
     Ok(())
 }
 
-/// Prints a small banner header used at the start of the CLI output.
-///
-/// # Examples
-///
-/// ```rust
-/// // Prints a decorative banner to stdout.
-/// print_banner();
-/// ```
 fn print_banner() {
     println!();
     println!("   {}", "VETTA FINANCIAL ENGINE".bold());

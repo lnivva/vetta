@@ -20,21 +20,6 @@ pub struct LocalSttStrategy {
 }
 
 impl LocalSttStrategy {
-    /// Create a LocalSttStrategy after verifying the Unix-domain socket path exists.
-    ///
-    /// If the provided path does not exist, this returns `SttError::SocketNotFound`.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use vetta_core::stt::local::LocalSttStrategy;
-    /// use vetta_core::stt::SttError;
-    ///
-    /// # async fn example() -> Result<(), SttError> {
-    /// let strategy = LocalSttStrategy::connect("/var/run/stt.sock").await?;
-    /// # Ok(())
-    /// # }
-    /// ```
     pub async fn connect(socket_path: impl Into<String>) -> Result<Self, SttError> {
         let path = socket_path.into();
 
@@ -45,11 +30,6 @@ impl LocalSttStrategy {
         Ok(Self { socket_path: path })
     }
 
-    /// Create a gRPC SpeechToText client connected to this strategy's Unix-domain socket.
-    ///
-    /// # Errors
-    ///
-    /// Returns `SttError` if the gRPC endpoint cannot be created or the connection fails.
     async fn client(&self) -> Result<SpeechToTextClient<tonic::transport::Channel>, SttError> {
         let path = self.socket_path.clone();
 
@@ -69,32 +49,6 @@ impl LocalSttStrategy {
 
 #[async_trait]
 impl SpeechToText for LocalSttStrategy {
-    /// Transcribes a local audio file.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// use tokio_stream::StreamExt;
-    /// use vetta_core::stt::{SpeechToText, TranscribeOptions, SttError};
-    ///
-    /// async fn example_call(stt: &impl SpeechToText) -> Result<(), SttError> {
-    ///     let options = TranscribeOptions {
-    ///         language: Some("en".to_string()),
-    ///         diarization: true,
-    ///         num_speakers: 2,
-    ///         initial_prompt: None,
-    ///     };
-    ///
-    ///     let mut stream = stt.transcribe("tests/fixtures/sample.wav", options).await?;
-    ///
-    ///     while let Some(item) = stream.next().await {
-    ///         let chunk = item?;
-    ///         println!("{}: {}", chunk.start_time, chunk.text);
-    ///     }
-    ///
-    ///     Ok(())
-    /// }
-    /// ```
     async fn transcribe(
         &self,
         audio_path: &str,

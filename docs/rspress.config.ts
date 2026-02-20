@@ -3,8 +3,7 @@ import {defineConfig} from "@rspress/core";
 export default defineConfig({
     root: "content",
     title: "Vetta",
-    description:
-        "Institutional-grade financial analysis engine — architecture & design documentation",
+    description: "A financial analysis engine for ingesting earnings calls and enabling structured, semantic search across transcripts.",
 
     icon: "/vetta-logo.png",
     logo: {
