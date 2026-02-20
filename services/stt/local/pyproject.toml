@@ -14,9 +14,14 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "mypy>=1.19.1",
     "pytest==8.3.0",
     "pytest-mock==3.14.0",
     "ruff==0.15.2",
+    "types-grpcio>=1.0.0.20251009",
+    "types-protobuf>=6.32.1.20251210",
+    "types-psutil>=7.2.2.20260130",
+    "types-requests>=2.32.4.20260107",
 ]
 
 [tool.uv]
@@ -31,3 +36,13 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
+
+[tool.mypy]
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = [
+    "faster_whisper.*",
+    "ctranslate2.*",
+]
+ignore_missing_imports = true

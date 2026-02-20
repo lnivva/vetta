@@ -1,5 +1,6 @@
 import io
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import grpc
@@ -18,7 +19,7 @@ from speech import speech_pb2
 
 def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
     """Builds a Settings object with sane defaults."""
-    inference_defaults = dict(
+    inference_defaults: dict[str, Any] = dict(
         beam_size=5,
         vad_filter=True,
         vad_min_silence_ms=500,
@@ -115,7 +116,7 @@ class TestWhisperServicer:
 
     @patch("servicer.requests.get")
     def test_audio_uri_payload_fetches_file(
-        self, mock_get, servicer, mock_whisper_model
+            self, mock_get, servicer, mock_whisper_model
     ):
         """Verifies 'uri' is fetched and passed as BytesIO."""
         mock_response = MagicMock()
