@@ -16,6 +16,9 @@ defaults:
   run:
     working-directory: services/stt/local
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     name: Lint & Test

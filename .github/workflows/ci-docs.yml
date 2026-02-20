@@ -16,6 +16,9 @@ defaults:
   run:
     working-directory: docs
 
+permissions:
+  contents: read
+
 jobs:
   ci:
     name: Build
