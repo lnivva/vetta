@@ -1,7 +1,10 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
 use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    path::PathBuf,
+};
 use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::validate_media_file;
@@ -39,7 +42,7 @@ struct Cli {
         default_value = "/tmp/whisper.sock",
         global = true
     )]
-    socket: String,
+    socket: PathBuf,
 
     #[command(subcommand)]
     command: Resource,
@@ -59,13 +62,19 @@ enum EarningsAction {
     #[command(about = "Process an audio/video file")]
     Process {
         #[arg(short, long)]
-        file: String,
+        file: PathBuf,
         #[arg(short, long)]
         ticker: String,
         #[arg(short, long)]
         year: u16,
         #[arg(short, long, value_enum)]
         quarter: CliQuarter,
+
+        #[arg(long, value_name = "PATH")]
+        out: Option<PathBuf>,
+
+        #[arg(long)]
+        print: bool,
     },
 }
 
@@ -83,8 +92,11 @@ async fn main() -> Result<()> {
                 ticker,
                 year,
                 quarter,
+                out,
+                print,
             } => {
-                run_processing_pipeline(file, ticker, year, quarter, &cli.socket).await?;
+                run_processing_pipeline(file, ticker, year, quarter, &cli.socket, out, print)
+                    .await?;
             }
         },
     }
@@ -93,11 +105,13 @@ async fn main() -> Result<()> {
 }
 
 async fn run_processing_pipeline(
-    file: String,
+    file: PathBuf,
     ticker: String,
     year: u16,
     quarter: CliQuarter,
-    socket_path: &str,
+    socket_path: &PathBuf,
+    out: Option<PathBuf>,
+    print: bool,
 ) -> Result<()> {
     let core_quarter: CoreQuarter = quarter.into();
 
@@ -114,14 +128,13 @@ async fn run_processing_pipeline(
     let file_path = std::fs::canonicalize(&file)
         .into_diagnostic()
         .wrap_err("Failed to resolve input path")?;
-    let file_path = file_path.to_string_lossy().to_string();
 
-    println!("   {:<10} {}", "INPUT:".dimmed(), file_path);
-    println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path);
+    println!("   {:<10} {}", "INPUT:".dimmed(), file_path.display());
+    println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path.display());
     println!();
 
-    // ── 1. Validation ──────────────────────────────────────────
-    let file_info = validate_media_file(&file_path).wrap_err("Validation phase failed")?;
+    let file_info =
+        validate_media_file(&file_path.to_string_lossy()).wrap_err("Validation phase failed")?;
 
     println!("   {}", "✔ VALIDATION PASSED".green().bold());
     println!("   {:<10} {}", "Format:".dimmed(), file_info);
@@ -131,17 +144,20 @@ async fn run_processing_pipeline(
     println!("   1. [✔] Validation");
     println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
 
-    // ── 2. Transcription ───────────────────────────────────────
-    let stt = LocalSttStrategy::connect(socket_path)
+    let stt = LocalSttStrategy::connect(socket_path.to_string_lossy())
         .await
         .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to connect to STT service at '{}'", socket_path))?;
+        .wrap_err_with(|| {
+            format!(
+                "Failed to connect to STT service at '{}'",
+                socket_path.display()
+            )
+        })?;
 
     let options = TranscribeOptions {
         language: Some("en".into()),
         initial_prompt: Some(
-            "Earnings call transcript. Financial terminology, \
-             company names, analyst questions and management responses."
+            "Earnings call transcript. Financial terminology, company names, analyst questions and management responses."
                 .into(),
         ),
         diarization: false,
@@ -149,35 +165,46 @@ async fn run_processing_pipeline(
     };
 
     let mut stream = stt
-        .transcribe(&file_path, options)
+        .transcribe(&file_path.to_string_lossy(), options)
         .await
         .into_diagnostic()
         .wrap_err("Transcription failed")?;
 
     let mut segment_count = 0u32;
+    let mut full = String::new();
 
     while let Some(result) = stream.next().await {
         let chunk = result
             .into_diagnostic()
             .wrap_err("Error reading transcript chunk")?;
-
         segment_count += 1;
 
-        print!(
-            "\r   \x1B[K[{:.1}s → {:.1}s] {}",
-            chunk.start_time,
-            chunk.end_time,
-            chunk.text.trim()
-        );
+        let line = chunk.text.trim_end();
+        if !line.is_empty() {
+            full.push_str(line);
+            full.push('\n');
+        }
+
+        print!("\r\x1B[K   Transcribing… {} segments", segment_count);
         io::stdout().flush().into_diagnostic()?;
     }
 
     println!(
-        "\r   \x1B[K   2. [✔] Transcription ({} segments)",
+        "\r\x1B[K   2. [✔] Transcription ({} segments)",
         segment_count
     );
-    println!("   3. [{}] Vector Embedding", "WAITING".dimmed());
-    println!();
+
+    if let Some(out_path) = out {
+        std::fs::write(&out_path, full.as_bytes())
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to write transcript to {}", out_path.display()))?;
+        println!("   {:<10} {}", "OUTPUT:".dimmed(), out_path.display());
+    }
+
+    if print {
+        println!();
+        print!("{full}");
+    }
 
     Ok(())
 }
