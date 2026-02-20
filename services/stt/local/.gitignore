@@ -1,5 +1,6 @@
 .venv/
 __pycache__/
 *.pyc
-speech_pb2.py
-speech_pb2_grpc.py
+/speech/speech_pb2.py
+/speech/speech_pb2_grpc.py
+/speech/speech_pb2.pyi

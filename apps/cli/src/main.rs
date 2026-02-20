@@ -16,15 +16,6 @@ enum CliQuarter {
 }
 
 impl From<CliQuarter> for CoreQuarter {
-    /// Convert a CLI quarter into the corresponding core domain quarter.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let cq = CliQuarter::Q2;
-    /// let core: CoreQuarter = CoreQuarter::from(cq);
-    /// assert_eq!(core, CoreQuarter::Q2);
-    /// ```
     fn from(cli: CliQuarter) -> Self {
         match cli {
             CliQuarter::Q1 => CoreQuarter::Q1,
@@ -42,7 +33,6 @@ impl From<CliQuarter> for CoreQuarter {
     version
 )]
 struct Cli {
-    /// Path to the Whisper Unix Domain Socket (Env: WHISPER_SOCK)
     #[arg(
         long,
         env = "WHISPER_SOCK",
@@ -79,33 +69,6 @@ enum EarningsAction {
     },
 }
 
-/// CLI entry point that loads environment, sets up a panic hook, parses arguments, and dispatches the selected subcommand.
-///
-/// This function initializes runtime-level behavior (dotenv and panic hook), parses the `Cli` arguments, and routes
-/// the chosen `Resource`/`EarningsAction` to the appropriate processing pipeline.
-///
-/// # Examples
-///
-/// ```
-/// use apps::cli::Cli;
-///
-/// // Simulate invocation of the binary with the `earnings process` subcommand.
-/// let args = vec![
-///     "vettacli",
-///     "earnings",
-///     "process",
-///     "--file",
-///     "call.mp3",
-///     "--ticker",
-///     "ACME",
-///     "--year",
-///     "2024",
-///     "--quarter",
-///     "Q1",
-/// ];
-/// let cli = Cli::parse_from(args);
-/// assert_eq!(cli.socket, std::env::var("WHISPER_SOCK").unwrap_or_else(|_| "/tmp/whisper.sock".into()));
-/// ```
 #[tokio::main]
 async fn main() -> Result<()> {
     let _ = dotenvy::dotenv().ok();
@@ -129,34 +92,6 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Runs the end-to-end processing pipeline for an earnings call media file.
-///
-/// Performs media validation, connects to a local STT service over the provided socket,
-/// streams transcription results while printing live progress, and reports pipeline stage status.
-/// On success the pipeline completes after transcription and prints a brief summary; on failure
-/// returns a diagnostic error describing the failing phase.
-///
-/// # Errors
-///
-/// Returns an error if the input path cannot be resolved, validation fails, the STT service
-/// cannot be reached, or if reading/transcribing chunks fails.
-///
-/// # Examples
-///
-/// ```no_run
-/// # use vetta_core::cli::CliQuarter;
-/// # use std::error::Error;
-/// # async fn run() -> Result<(), Box<dyn Error>> {
-/// // Call the pipeline with an audio file, ticker, year, quarter and socket path.
-/// run_processing_pipeline(
-///     "tests/fixtures/earnings_call.mp3".into(),
-///     "ACME".into(),
-///     2025,
-///     CliQuarter::Q1,
-///     "/tmp/whisper.sock",
-/// ).await?;
-/// # Ok(()) }
-/// ```
 async fn run_processing_pipeline(
     file: String,
     ticker: String,
@@ -247,14 +182,6 @@ async fn run_processing_pipeline(
     Ok(())
 }
 
-/// Prints a small banner header used at the start of the CLI output.
-///
-/// # Examples
-///
-/// ```rust
-/// // Prints a decorative banner to stdout.
-/// print_banner();
-/// ```
 fn print_banner() {
     println!();
     println!("   {}", "VETTA FINANCIAL ENGINE".bold());
