@@ -9,7 +9,31 @@ updates:
       - "dependencies"
       - "rust"
     commit-message:
-      prefix: "deps"
+      prefix: "deps(cargo)"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "docs"
+    commit-message:
+      prefix: "deps(docs)"
+      include: "scope"
+
+  - package-ecosystem: "pip"
+    directory: "/services/stt/local"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(stt)"
       include: "scope"
 
   - package-ecosystem: "github-actions"
