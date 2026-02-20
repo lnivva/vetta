@@ -45,6 +45,10 @@ ffmpeg -i /tmp/test.aiff /tmp/test.mp3
 
 ## 4. Process test audio file
 
+::: tip Platform Support
+The `say` command below is macOS-specific. Linux/Windows users can skip to Section 4 and use any MP3 file for testing.
+:::
+
 ```bash
 cargo run -- earnings process \
   --file /tmp/test.mp3 \
