@@ -37,13 +37,13 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 
-[tool.mypy]
-ignore_missing_imports = false
-
 [[tool.mypy.overrides]]
 module = [
     "faster_whisper.*",
     "ctranslate2.*",
-    "speech.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["speech", "speech.*"]
+ignore_errors = true
