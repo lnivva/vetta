@@ -1,9 +1,11 @@
 use super::{SpeechToText, SttError, TranscribeOptions, TranscriptChunk, TranscriptStream, Word};
 use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
+use std::path::Path;
 use tokio::net::UnixStream;
 use tokio_stream::StreamExt;
 use tonic::transport::{Endpoint, Uri};
+use tonic::Status;
 use tower::service_fn;
 
 pub mod proto {
@@ -11,8 +13,8 @@ pub mod proto {
 }
 
 use proto::{
-    TranscribeOptions as ProtoOptions, TranscribeRequest,
     speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
+    TranscribeOptions as ProtoOptions, TranscribeRequest,
 };
 
 pub struct LocalSttStrategy {
@@ -23,7 +25,7 @@ impl LocalSttStrategy {
     pub async fn connect(socket_path: impl Into<String>) -> Result<Self, SttError> {
         let path = socket_path.into();
 
-        if !std::path::Path::new(&path).exists() {
+        if !Path::new(&path).exists() {
             return Err(SttError::SocketNotFound(path));
         }
 
@@ -54,14 +56,14 @@ impl SpeechToText for LocalSttStrategy {
         audio_path: &str,
         options: TranscribeOptions,
     ) -> Result<TranscriptStream, SttError> {
-        if !std::path::Path::new(audio_path).exists() {
+        if !Path::new(audio_path).exists() {
             return Err(SttError::AudioFileNotFound(audio_path.to_string()));
         }
 
         let mut client = self.client().await?;
 
         let num_speakers: i32 = options.num_speakers.try_into().map_err(|_| {
-            SttError::Service(tonic::Status::invalid_argument("num_speakers out of range"))
+            SttError::Service(Status::invalid_argument("num_speakers out of range"))
         })?;
 
         let request = TranscribeRequest {

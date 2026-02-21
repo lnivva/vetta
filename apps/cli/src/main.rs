@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
+use miette::{set_panic_hook, Context, IntoDiagnostic, Result};
 use std::path::Path;
 use std::{
     io::{self, Write},
@@ -62,19 +62,24 @@ enum Resource {
 enum EarningsAction {
     #[command(about = "Process an audio/video file")]
     Process {
-        #[arg(short, long)]
+        #[arg(short, long, value_name = "FILE")]
         file: PathBuf,
-        #[arg(short, long)]
+
+        #[arg(short, long, value_name = "TICKER")]
         ticker: String,
+
         #[arg(short, long)]
         year: u16,
+
         #[arg(short, long, value_enum)]
         quarter: CliQuarter,
 
-        #[arg(long, value_name = "PATH")]
+        #[arg(long, value_name = "PATH", conflicts_with = "print")]
+        /// (Debug) Dump raw transcript to a file instead of sending to downstream pipeline
         out: Option<PathBuf>,
 
         #[arg(long)]
+        /// (Debug) Stream transcript to stdout for inspection
         print: bool,
     },
 }
