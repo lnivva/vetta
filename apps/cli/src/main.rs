@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use colored::*;
-use miette::{set_panic_hook, Context, IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result, set_panic_hook};
 use std::path::Path;
 use std::{
     io::{self, Write},

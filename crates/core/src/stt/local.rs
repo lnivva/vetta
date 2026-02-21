@@ -4,8 +4,8 @@ use hyper_util::rt::TokioIo;
 use std::path::Path;
 use tokio::net::UnixStream;
 use tokio_stream::StreamExt;
-use tonic::transport::{Endpoint, Uri};
 use tonic::Status;
+use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
 pub mod proto {
@@ -13,8 +13,8 @@ pub mod proto {
 }
 
 use proto::{
-    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
     TranscribeOptions as ProtoOptions, TranscribeRequest,
+    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
 };
 
 pub struct LocalSttStrategy {
