@@ -4,6 +4,7 @@ use colored::*;
 use miette::{Context, IntoDiagnostic, Result};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use tokio::time::{Duration, timeout};
 use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::validate_media_file;
@@ -46,11 +47,16 @@ pub enum EarningsAction {
         quarter: CliQuarter,
 
         /// Dump raw transcript to a file  
-        #[arg(long, value_name = "PATH", conflicts_with = "print")]
+        #[arg(
+            long,
+            value_name = "PATH",
+            conflicts_with = "print",
+            required_unless_present = "print"
+        )]
         out: Option<PathBuf>,
 
-        /// Stream transcript to stdout  
-        #[arg(long)]
+        /// Stream transcript to stdout
+        #[arg(long, required_unless_present = "out")]
         print: bool,
     },
 }
@@ -106,16 +112,38 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
                 num_speakers: 2,
             };
 
-            let mut stream = stt
-                .transcribe(&file_path.to_string_lossy(), options)
-                .await
-                .into_diagnostic()
-                .wrap_err("Transcription failed")?;
+            const STREAM_START_TIMEOUT: Duration = Duration::from_secs(120);
+            const CHUNK_READ_TIMEOUT: Duration = Duration::from_secs(300);
+
+            let mut stream = timeout(
+                STREAM_START_TIMEOUT,
+                stt.transcribe(&file_path.to_string_lossy(), options),
+            )
+            .await
+            .into_diagnostic()
+            .wrap_err("Transcription stream startup timed out")?
+            .into_diagnostic()
+            .wrap_err("Transcription failed")?;
 
             let mut segment_count = 0u32;
             let mut full = String::new();
 
-            while let Some(result) = stream.next().await {
+            loop {
+                let maybe_result = timeout(CHUNK_READ_TIMEOUT, stream.next())
+                    .await
+                    .into_diagnostic()
+                    .wrap_err_with(|| {
+                        format!(
+                            "Timed out waiting for transcript chunk after segment {segment_count} \
+                                (no data received within {}s)",
+                            CHUNK_READ_TIMEOUT.as_secs()
+                        )
+                    })?;
+
+                let Some(result) = maybe_result else {
+                    break; // stream exhausted  
+                };
+
                 let chunk = result
                     .into_diagnostic()
                     .wrap_err("Error reading transcript chunk")?;
