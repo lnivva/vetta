@@ -1,7 +1,7 @@
 use miette::{Context, IntoDiagnostic, Result};
-use std::path::Path;
 use std::io::{self, Write};
-    
+use std::path::Path;
+
 pub fn write_file(path: &Path, content: &str) -> Result<()> {
     std::fs::write(path, content.as_bytes())
         .into_diagnostic()
