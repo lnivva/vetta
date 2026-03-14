@@ -8,7 +8,7 @@ members = [
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.85.0"
+rust-version = "1.94.0"
 authors = ["lnivva"]
 license = "MIT"
 description = "Institutional-grade financial analysis engine combining ASR (Whisper), vector embeddings, and semantic search for earnings call and 10-K analysis."
@@ -36,6 +36,7 @@ tonic = "0.12.3"
 tonic-build = "0.12.3"
 prost = "0.13"
 dotenvy = "0.15.7"
+mongodb = { version = "3.5.1", features = ["bson-3"] }
 
 [profile.dev]
 opt-level = 0
