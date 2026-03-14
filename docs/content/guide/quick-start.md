@@ -34,6 +34,11 @@ You will see the ready line when it is accepting connections:
 
 ## 3. Generating a test audio file (macOS Only)
 
+::: tip Platform Support
+The `say` command below is macOS-specific. Linux/Windows users should instead pass their MP3 using the
+`--file /path/to/file.mp3` flag.  
+:::
+
 ```bash
 say -v Samantha \
   "Good morning everyone and welcome to the Q3 2024 earnings call. \
@@ -44,11 +49,6 @@ ffmpeg -i /tmp/test.aiff /tmp/test.mp3
 ```
 
 ## 4. Process test audio file
-
-::: tip Platform Support
-The `say` command above is macOS-specific. Linux/Windows users should instead pass their MP3 using the
-`--file /path/to/file.mp3` flag.  
-:::
 
 ```bash
 cargo run -- earnings process \

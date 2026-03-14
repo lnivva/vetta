@@ -40,13 +40,6 @@ export default defineConfig({
                     text: "Architecture",
                     items: [
                         {text: "Overview", link: "/architecture/overview"},
-                        {text: "Monorepo Layout", link: "/architecture/monorepo"},
-                        {text: "Speech-to-Text Pipeline", link: "/architecture/stt-pipeline"},
-                        {text: "STT Strategy Pattern", link: "/architecture/stt-strategy"},
-                        {text: "gRPC Transport", link: "/architecture/grpc-transport"},
-                        {text: "Python Service", link: "/architecture/python-service"},
-                        {text: "Configuration", link: "/architecture/configuration"},
-                        {text: "Decision Log", link: "/architecture/decisions"},
                     ],
                 },
             ],
