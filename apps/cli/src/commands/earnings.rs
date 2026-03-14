@@ -146,7 +146,7 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
             }
 
             if print {
-                output::write_stdout(&full);
+                output::write_stdout(&full)?;
             }
 
             if !quiet {
