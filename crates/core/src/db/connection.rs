@@ -1,7 +1,7 @@
 use super::config::DbConfig;
 use crate::db::error::DbError;
 use mongodb::bson::doc;
-use mongodb::{options::ClientOptions, Client, Database};
+use mongodb::{Client, Database, options::ClientOptions};
 
 pub struct Db {
     database: Database,
