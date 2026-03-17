@@ -17,6 +17,88 @@ cd vetta
 cargo build
 ```
 
+## 2. MongoDB Setup
+
+Vetta requires a running MongoDB instance **and** two environment variables:
+
+| Variable           | Description                          | Example                                            |  
+|--------------------|--------------------------------------|----------------------------------------------------|  
+| `MONGODB_URI`      | Connection string to your deployment | `mongodb://localhost:27017/?directConnection=true` |  
+| `MONGODB_DATABASE` | Database name for Vetta data         | `vetta`                                            |  
+
+Choose whichever option fits your setup, then export both variables.
+
+### Option A: Use an existing MongoDB instance
+
+If you already have MongoDB running (Atlas cluster, self-hosted, etc.), skip to exporting  
+your variables and continue to [Step 3](#_3-start-the-stt-service):
+
+```bash  
+export MONGODB_URI="your-connection-string"  
+export MONGODB_DATABASE="vetta"  
+```
+
+### Option B: Run MongoDB locally with Atlas CLI
+
+The [Atlas CLI](https://www.mongodb.com/docs/atlas/cli/current/install-atlas-cli/) can spin up a  
+full-featured local Atlas deployment inside Docker — no cloud account required.
+
+```bash  
+# Install the Atlas CLI (macOS)  
+brew install mongodb-atlas-cli  
+  
+# A Docker-compatible runtime is required.  
+# If you don't have Docker Desktop, Colima works well on macOS:  
+brew install colima docker  
+colima start  
+```  
+
+Start the local deployment:
+
+```bash  
+atlas local setup vetta-local \  
+  --type local \  
+  --port 27017 \  
+  --bindIpAll \  
+  --skipMongosh  
+```  
+
+On first run the CLI pulls the required container images. Once ready you'll see:
+
+```  
+Deployment vetta-local created.  
+```  
+
+Then **export the required environment variables**:
+
+```bash  
+export MONGODB_URI="mongodb://localhost:27017/?directConnection=true"  
+export MONGODB_DATABASE="vetta"  
+```  
+
+::: warning Required  
+Both variables must be set in every shell session. Consider adding them to your  
+`~/.bashrc`, `~/.zshrc`, or a local `.env` file.  
+:::
+
+::: tip Managing the local deployment
+
+```bash  
+# Check status  
+atlas local list   
+  
+# Stop (data is preserved)  
+atlas local pause vetta-local  
+  
+# Start again later  
+atlas local start vetta-local  
+  
+# Remove completely (data is lost)  
+atlas local delete vetta-local  
+```  
+
+:::
+
 ## 2. Start the STT service
 
 ```bash
