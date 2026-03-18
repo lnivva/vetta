@@ -103,7 +103,9 @@ def _stub_preprocessor(servicer):
     )
 
 
-def _prepare_servicer(servicer, audio_input="test.mp3", log_source="test.mp3", source_type="path"):
+def _prepare_servicer(
+    servicer, audio_input="test.mp3", log_source="test.mp3", source_type="path"
+):
     """Wire up both resolver and preprocessor stubs for a standard test."""
     _stub_resolve(servicer, audio_input, log_source, source_type)
     _stub_preprocessor(servicer)
@@ -148,7 +150,9 @@ class TestWhisperServicer:
         """Verifies raw 'data' bytes are wrapped in BytesIO."""
         data = b"fake wav bytes"
         bio = io.BytesIO(data)
-        _stub_resolve(servicer, audio_input=bio, log_source="<bytes>", source_type="data")
+        _stub_resolve(
+            servicer, audio_input=bio, log_source="<bytes>", source_type="data"
+        )
         _stub_preprocessor(servicer)
 
         req = MagicMock()

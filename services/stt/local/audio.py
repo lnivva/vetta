@@ -107,9 +107,7 @@ class AudioResolver:
 
         except requests.RequestException as exc:
             logger.exception("Failed to fetch audio from URI")
-            raise AudioFetchError(
-                f"Failed to fetch audio URI: {exc}"
-            ) from exc
+            raise AudioFetchError(f"Failed to fetch audio URI: {exc}") from exc
 
 
 class AudioPreprocessor:
@@ -148,12 +146,18 @@ class AudioPreprocessor:
         cmd = [
             "ffmpeg",
             "-nostdin",
-            "-threads", "0",
-            "-i", "pipe:0",
-            "-ar", str(self._sample_rate),
-            "-ac", "1",
-            "-f", "s16le",
-            "-acodec", "pcm_s16le",
+            "-threads",
+            "0",
+            "-i",
+            "pipe:0",
+            "-ar",
+            str(self._sample_rate),
+            "-ac",
+            "1",
+            "-f",
+            "s16le",
+            "-acodec",
+            "pcm_s16le",
             "pipe:1",
         ]
 
@@ -170,8 +174,7 @@ class AudioPreprocessor:
             )
 
         return (
-                np.frombuffer(process.stdout, dtype=np.int16)
-                .astype(np.float32) / 32768.0
+            np.frombuffer(process.stdout, dtype=np.int16).astype(np.float32) / 32768.0
         )
 
     @staticmethod
@@ -188,7 +191,7 @@ class AudioPreprocessor:
         return io.BytesIO(audio_bytes)
 
     def prepare(
-            self, audio: str | bytes, *, diarize: bool = False
+        self, audio: str | bytes, *, diarize: bool = False
     ) -> tuple[np.ndarray | str, io.BytesIO | str | None]:
         """
         Prepare audio for transcription and optional diarization.

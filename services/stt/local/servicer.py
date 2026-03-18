@@ -68,9 +68,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         return 0
 
     @staticmethod
-    def _segment_to_chunk(
-            segment, speaker_id: str = ""
-    ) -> speech_pb2.TranscriptChunk:
+    def _segment_to_chunk(segment, speaker_id: str = "") -> speech_pb2.TranscriptChunk:
         """Convert a faster-whisper segment to a gRPC TranscriptChunk."""
         return speech_pb2.TranscriptChunk(
             start_time=segment.start,
@@ -103,9 +101,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             speech_pb2.TranscriptChunk
         """
         inf = self.inference
-        prompt = (
-                request.options.initial_prompt or inf.initial_prompt or None
-        )
+        prompt = request.options.initial_prompt or inf.initial_prompt or None
 
         # ── Resolve audio source ─────────────────────────────
         try:
@@ -128,7 +124,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             # ── Preprocess audio ─────────────────────────────────
         try:
             whisper_input, diar_input = self._preprocessor.prepare(
-                audio, diarize=diarize,
+                audio,
+                diarize=diarize,
             )
         except AudioDecodeError as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
@@ -195,7 +192,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         for segment in segments:
             if diarization_result is not None:
                 speaker = DiarizationPipeline._find_dominant_speaker(
-                    diarization_result, segment.start, segment.end,
+                    diarization_result,
+                    segment.start,
+                    segment.end,
                 )
             else:
                 speaker = ""

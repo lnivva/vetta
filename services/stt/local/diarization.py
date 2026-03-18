@@ -109,10 +109,10 @@ class DiarizationPipeline:
         )
 
     def run(
-            self,
-            audio_input: str | io.BytesIO,
-            min_speakers: int = 0,
-            max_speakers: int = 0,
+        self,
+        audio_input: str | io.BytesIO,
+        min_speakers: int = 0,
+        max_speakers: int = 0,
     ) -> Annotation:
         """
         Run speaker diarization on the provided audio.
@@ -156,8 +156,8 @@ class DiarizationPipeline:
 
     @staticmethod
     def assign_speakers(
-            diarization: Annotation,
-            segments: list[dict],
+        diarization: Annotation,
+        segments: list[dict],
     ) -> list[dict]:
         """
         Assign a speaker label to each transcript segment based on
@@ -193,9 +193,9 @@ class DiarizationPipeline:
 
     @staticmethod
     def _find_dominant_speaker(
-            diarization: Annotation,
-            start: float,
-            end: float,
+        diarization: Annotation,
+        start: float,
+        end: float,
     ) -> str:
         """
         Find the speaker with the most temporal overlap in a given interval.
