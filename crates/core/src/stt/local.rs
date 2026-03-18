@@ -62,9 +62,14 @@ impl SpeechToText for LocalSttStrategy {
 
         let mut client = self.client().await?;
 
-        let num_speakers: i32 = options.num_speakers.try_into().map_err(|_| {
-            SttError::Service(Status::invalid_argument("num_speakers out of range"))
-        })?;
+        let num_speakers: Option<i32> = options
+            .num_speakers
+            .map(|n| {
+                n.try_into().map_err(|_| {
+                    SttError::Service(Status::invalid_argument("num_speakers out of range"))
+                })
+            })
+            .transpose()?;
 
         let request = TranscribeRequest {
             audio_source: Some(AudioSource::Path(audio_path.to_string())),

@@ -19,6 +19,8 @@ tower.workspace = true
 prost.workspace = true
 hyper-util.workspace = true
 mongodb.workspace = true
+config = "0.15.22"
+futures = "0.3.32"
 
 [dev-dependencies]
 tempfile.workspace = true
