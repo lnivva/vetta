@@ -10,19 +10,6 @@ pub fn write_file(path: &Path, content: &str) -> Result<()> {
         .wrap_err_with(|| format!("Failed to write to {}", path.display()))
 }
 
-pub fn write_stdout(content: &str) -> Result<()> {
-    let mut stdout = io::stdout();
-    stdout
-        .write_all(content.as_bytes())
-        .into_diagnostic()
-        .wrap_err("Failed to write to stdout")?;
-    stdout
-        .flush()
-        .into_diagnostic()
-        .wrap_err("Failed to flush stdout")?;
-    Ok(())
-}
-
 /// Pretty-print a transcript to stdout with colors, timestamps, and speaker labels.
 pub fn print_transcript(transcript: &Transcript) -> Result<()> {
     let mut stdout = io::stdout();
