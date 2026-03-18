@@ -3,7 +3,7 @@ PROTO_OUT = .
 
 PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 
-.PHONY: proto setup test test-unit test-integration clean format
+.PHONY: proto setup test test-unit test-integration clean-proto format
 
 proto:
 	uv run python -m grpc_tools.protoc \
@@ -30,7 +30,7 @@ test-unit:
 test-integration:
 	uv run pytest tests/test_integration.py -v
 
-clean:
+clean-proto:
 	# Dynamically remove all generated proto files anywhere in the project
 	find . -name "*_pb2.py" -delete
 	find . -name "*_pb2_grpc.py" -delete

@@ -50,6 +50,14 @@ def minimal_config(tmp_path: Path) -> Path:
         max_workers = 1
         cpu_threads = 2
         num_workers = 1
+        
+        [diarization]
+        enabled = true
+        hf_token = "" # or set WHISPER_DIARIZATION_HF_TOKEN env var
+        model = "pyannote/speaker-diarization-3.1"
+        device = "cuda"
+        min_speakers = 0
+        max_speakers = 0
     """)
     )
     return cfg
