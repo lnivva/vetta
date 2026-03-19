@@ -139,7 +139,7 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     if size_bytes > MAX_FILE_SIZE_MB * 1024 * 1024 {
         return Err(IngestError::FileTooLarge {
             limit: MAX_FILE_SIZE_MB,
-            got: (size_bytes + 1024 * 1024 - 1) / (1024 * 1024),
+            got: size_bytes.div_ceil(1024 * 1024),
         });
     }
 
