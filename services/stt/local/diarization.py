@@ -114,6 +114,10 @@ class DiarizationPipeline:
         default_max_speakers (int): Default maximum speakers (0 = auto).
     """
 
+    pipeline: Pipeline
+    default_min_speakers: int
+    default_max_speakers: int
+
     def __init__(self, config: DiarizationConfig):
         """
         Load the pyannote diarization pipeline.
@@ -140,23 +144,32 @@ class DiarizationPipeline:
             extra={"model": config.model, "device": config.device},
         )
 
-        self.pipeline = Pipeline.from_pretrained(
+        pipeline = Pipeline.from_pretrained(
             config.model,
             token=config.hf_token,
         )
 
-        if config.device == "cuda" and torch.cuda.is_available():
-            self.pipeline.to(torch.device("cuda"))
-        else:
-            self.pipeline.to(torch.device("cpu"))
+        if pipeline is None:
+            raise RuntimeError(
+                f"Failed to load diarization pipeline '{config.model}'. "
+                f"Pipeline.from_pretrained() returned None. "
+                f"Verify the model name and that your HuggingFace token "
+                f"has access to the model."
+            )
 
+        if config.device == "cuda" and torch.cuda.is_available():
+            pipeline.to(torch.device("cuda"))
+        else:
+            pipeline.to(torch.device("cpu"))
+
+        self.pipeline = pipeline
         self.default_min_speakers = config.min_speakers
         self.default_max_speakers = config.max_speakers
 
         logger.info("Diarization pipeline loaded successfully")
 
     @staticmethod
-    def _extract_annotation(result) -> Annotation:
+    def _extract_annotation(result: object) -> Annotation:
         """
         Extract an Annotation from the pipeline result.
 
@@ -171,7 +184,7 @@ class DiarizationPipeline:
 
             # pyannote.audio >= 3.x returns DiarizeOutput dataclass
         if hasattr(result, "speaker_diarization"):
-            return result.speaker_diarization
+            return result.speaker_diarization  # type: ignore[no-any-return]
 
         raise TypeError(
             f"Cannot extract Annotation from {type(result).__name__}. "
@@ -197,10 +210,11 @@ class DiarizationPipeline:
             A :class:`DiarizationResult` that provides speaker lookup
             without exposing pyannote internals.
         """
+
         if isinstance(audio_input, io.BytesIO):
             audio_input.seek(0)
 
-        params: dict = {}
+        params: dict[str, int] = {}
         effective_min = min_speakers or self.default_min_speakers
         effective_max = max_speakers or self.default_max_speakers
 
@@ -210,7 +224,7 @@ class DiarizationPipeline:
             params["max_speakers"] = effective_max
 
         logger.debug("Running diarization", extra={"params": params})
-        result = self.pipeline(audio_input, **params)
+        result = self.pipeline(audio_input, **params)  # type: ignore[arg-type]
 
         annotation = self._extract_annotation(result)
 
