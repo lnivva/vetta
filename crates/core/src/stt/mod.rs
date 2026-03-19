@@ -31,7 +31,7 @@ pub struct TranscribeOptions {
     pub language: Option<String>,
     pub initial_prompt: Option<String>,
     pub diarization: bool,
-    pub num_speakers: u32,
+    pub num_speakers: Option<u32>,
 }
 
 pub type TranscriptStream = Pin<Box<dyn Stream<Item = Result<TranscriptChunk, SttError>> + Send>>;

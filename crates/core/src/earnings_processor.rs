@@ -3,14 +3,22 @@ use std::fs;
 use std::path::Path;
 use thiserror::Error;
 
+use crate::db::{Db, DbConfig, DbError, EarningsRepository, SegmentInput, StoreEarningsRequest};
+use crate::domain::{Quarter, Transcript, TranscriptSegment};
+use crate::stt::{SpeechToText, TranscribeOptions};
+
+// ── Constants ────────────────────────────────────────────────
+
 const MAX_FILE_SIZE_MB: u64 = 500;
 const ALLOWED_MIME_TYPES: [&str; 5] = [
-    "audio/mpeg",  // .mp3
-    "audio/wav",   // .wav
-    "audio/x-wav", // .wav
-    "audio/x-m4a", // .m4a
-    "video/mp4",   // .mp4
+    "audio/mpeg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/x-m4a",
+    "video/mp4",
 ];
+
+// ── Errors ───────────────────────────────────────────────────
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum IngestError {
@@ -58,6 +66,61 @@ pub enum IngestError {
     Io(#[from] std::io::Error),
 }
 
+#[derive(Error, Debug, Diagnostic)]
+pub enum PipelineError {
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Ingest(#[from] IngestError),
+
+    #[error("Transcription failed: {0}")]
+    #[diagnostic(code(vetta::pipeline::transcription))]
+    Transcription(String),
+
+    #[error("Database error: {0}")]
+    #[diagnostic(code(vetta::pipeline::database))]
+    Database(String),
+
+    #[error("Duplicate earnings call: {0}")]
+    #[diagnostic(
+        code(vetta::pipeline::duplicate),
+        help("This earnings call has already been processed. Use --force to overwrite.")
+    )]
+    Duplicate(String),
+}
+
+impl From<DbError> for PipelineError {
+    fn from(err: DbError) -> Self {
+        match err {
+            DbError::Duplicate(msg) => PipelineError::Duplicate(msg),
+            other => PipelineError::Database(other.to_string()),
+        }
+    }
+}
+
+// ── Pipeline events ──────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub enum PipelineEvent {
+    ValidationPassed { format_info: String },
+    TranscriptionProgress { segments: u32 },
+    TranscriptionComplete { transcript: Transcript },
+    StoringChunks { chunk_count: u32 },
+    Stored { call_id: String, chunk_count: u32 },
+}
+
+// ── Pipeline request ─────────────────────────────────────────
+
+pub struct ProcessRequest {
+    pub file_path: String,
+    pub ticker: String,
+    pub year: u16,
+    pub quarter: Quarter,
+    pub language: Option<String>,
+    pub initial_prompt: Option<String>,
+}
+
+// ── Validation ───────────────────────────────────────────────
+
 pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 
@@ -70,11 +133,13 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
         return Err(IngestError::FileEmpty);
     }
 
-    let size_mb = metadata.len() / (1024 * 1024);
-    if size_mb > MAX_FILE_SIZE_MB {
+    let size_bytes = metadata.len();
+    let size_mb = size_bytes / (1024 * 1024);
+
+    if size_bytes > MAX_FILE_SIZE_MB * 1024 * 1024 {
         return Err(IngestError::FileTooLarge {
             limit: MAX_FILE_SIZE_MB,
-            got: size_mb,
+            got: size_bytes.div_ceil(1024 * 1024),
         });
     }
 
@@ -88,6 +153,136 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
 
     Ok(format!("{} ({}MB)", kind.mime_type(), size_mb))
 }
+
+// ── Orchestrator ─────────────────────────────────────────────
+
+pub struct EarningsProcessor {
+    stt: Box<dyn SpeechToText>,
+    db: Db,
+}
+
+impl EarningsProcessor {
+    pub fn new(stt: Box<dyn SpeechToText>, db: Db) -> Self {
+        Self { stt, db }
+    }
+
+    pub async fn from_env(stt: Box<dyn SpeechToText>) -> Result<Self, PipelineError> {
+        let db_config = DbConfig::from_env().map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        let db = Db::connect(&db_config)
+            .await
+            .map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        // Ensure indexes on startup
+        let repo = EarningsRepository::new(&db);
+        repo.ensure_indexes()
+            .await
+            .map_err(|e| PipelineError::Database(e.to_string()))?;
+
+        Ok(Self { stt, db })
+    }
+
+    /// Runs the full pipeline, yielding progress events through a callback.
+    pub async fn process(
+        &self,
+        request: ProcessRequest,
+        mut on_event: impl FnMut(PipelineEvent),
+    ) -> Result<Transcript, PipelineError> {
+        // ── Stage 1: Validation ──────────────────────────────
+        let format_info = validate_media_file(&request.file_path)?;
+        on_event(PipelineEvent::ValidationPassed {
+            format_info: format_info.clone(),
+        });
+
+        // ── Stage 2: Transcription ───────────────────────────
+        let options = TranscribeOptions {
+            language: request.language.clone(),
+            initial_prompt: request.initial_prompt.clone(),
+            diarization: true,
+            num_speakers: None,
+        };
+
+        let mut stream = self
+            .stt
+            .transcribe(&request.file_path, options)
+            .await
+            .map_err(|e| PipelineError::Transcription(e.to_string()))?;
+
+        let mut segments: Vec<TranscriptSegment> = Vec::new();
+
+        use tokio_stream::StreamExt;
+        while let Some(result) = stream.next().await {
+            let chunk = result.map_err(|e| PipelineError::Transcription(e.to_string()))?;
+
+            let text = chunk.text.trim().to_string();
+            if !text.is_empty() {
+                segments.push(TranscriptSegment {
+                    start_time: chunk.start_time,
+                    end_time: chunk.end_time,
+                    text,
+                    speaker_id: chunk.speaker_id,
+                });
+            }
+
+            on_event(PipelineEvent::TranscriptionProgress {
+                segments: segments.len() as u32,
+            });
+        }
+
+        let transcript = Transcript { segments };
+
+        on_event(PipelineEvent::TranscriptionComplete {
+            transcript: transcript.clone(),
+        });
+
+        // ── Stage 3: Store in MongoDB ────────────────────────
+        let repo = EarningsRepository::new(&self.db);
+
+        // Extract file name from path
+        let file_name = Path::new(&request.file_path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| request.file_path.clone());
+
+        // Parse format from the validation info (e.g. "audio/mpeg (12MB)" → "audio/mpeg")
+        let file_format = format_info.split(' ').next().map(String::from);
+
+        let chunk_count = transcript.segments.len() as u32;
+        on_event(PipelineEvent::StoringChunks { chunk_count });
+
+        let store_request = StoreEarningsRequest {
+            ticker: request.ticker.clone(),
+            year: request.year,
+            quarter: request.quarter.to_string(),
+            file_name,
+            file_hash: None, // TODO: compute SHA-256 during validation
+            format: file_format,
+            duration_seconds: transcript.duration(),
+            stt_model: "whisper-large-v3".into(), // TODO: get from STT strategy
+            segments: transcript
+                .segments
+                .iter()
+                .map(|s| SegmentInput {
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                    text: s.text.clone(),
+                    speaker_id: s.speaker_id.clone(),
+                })
+                .collect(),
+        };
+
+        let call_id = repo.store(store_request).await?;
+
+        on_event(PipelineEvent::Stored {
+            call_id: call_id.to_hex(),
+            chunk_count,
+        });
+
+        Ok(transcript)
+    }
+}
+
+// ── Tests ────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {

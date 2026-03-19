@@ -19,7 +19,7 @@ message TranscribeRequest {
 
 message TranscribeOptions {
   bool   diarization = 1;
-  int32  num_speakers = 2;
+  optional int32  num_speakers = 2;
   string initial_prompt = 3;
 }
 

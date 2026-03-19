@@ -34,3 +34,116 @@ impl FromStr for Quarter {
         }
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptSegment {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub text: String,
+    pub speaker_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DialogueTurn {
+    pub speaker: String,
+    pub start_time: f32,
+    pub end_time: f32,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Transcript {
+    pub segments: Vec<TranscriptSegment>,
+}
+
+impl Transcript {
+    /// Plain text with speaker labels, one segment per line.
+    pub fn full_text(&self) -> String {
+        self.segments
+            .iter()
+            .filter(|s| !s.text.is_empty())
+            .map(|s| {
+                if s.speaker_id.is_empty() {
+                    s.text.clone()
+                } else {
+                    format!("{}: {}", s.speaker_id, s.text)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Get the set of unique speaker IDs.
+    pub fn unique_speakers(&self) -> Vec<String> {
+        let mut speakers: Vec<String> = self
+            .segments
+            .iter()
+            .map(|s| s.speaker_id.clone())
+            .filter(|s| !s.is_empty())
+            .collect();
+        speakers.sort();
+        speakers.dedup();
+        speakers
+    }
+
+    /// Group consecutive segments by the same speaker into dialogue turns.
+    pub fn as_dialogue(&self) -> Vec<DialogueTurn> {
+        let mut turns: Vec<DialogueTurn> = Vec::new();
+
+        for seg in &self.segments {
+            let text = seg.text.trim();
+            if text.is_empty() {
+                continue;
+            }
+
+            match turns.last_mut() {
+                Some(last) if last.speaker == seg.speaker_id => {
+                    last.text.push(' ');
+                    last.text.push_str(text);
+                    last.end_time = seg.end_time;
+                }
+                _ => {
+                    turns.push(DialogueTurn {
+                        speaker: seg.speaker_id.clone(),
+                        start_time: seg.start_time,
+                        end_time: seg.end_time,
+                        text: text.to_string(),
+                    });
+                }
+            }
+        }
+
+        turns
+    }
+
+    /// Total duration of the transcript in seconds.
+    pub fn duration(&self) -> f32 {
+        self.segments.last().map(|s| s.end_time).unwrap_or(0.0)
+    }
+
+    /// True if any segment has a speaker label.
+    pub fn has_speakers(&self) -> bool {
+        self.segments.iter().any(|s| !s.speaker_id.is_empty())
+    }
+}
+
+impl fmt::Display for Transcript {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for turn in self.as_dialogue() {
+            if turn.speaker.is_empty() {
+                writeln!(
+                    f,
+                    "[{:.1}s → {:.1}s] {}",
+                    turn.start_time, turn.end_time, turn.text
+                )?;
+            } else {
+                writeln!(
+                    f,
+                    "[{:.1}s → {:.1}s] {}: {}",
+                    turn.start_time, turn.end_time, turn.speaker, turn.text
+                )?;
+            }
+        }
+        Ok(())
+    }
+}

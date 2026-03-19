@@ -1,15 +1,13 @@
 use crate::output;
 use clap::{Subcommand, ValueEnum};
 use colored::*;
-use miette::{Context, IntoDiagnostic, Result};
-use std::io::{self, Write};
+use miette::{IntoDiagnostic, Result};
+use std::io;
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use tokio::time::{Duration, timeout};
-use tokio_stream::StreamExt;
 use vetta_core::domain::Quarter as CoreQuarter;
-use vetta_core::earnings_processor::validate_media_file;
+use vetta_core::earnings_processor::{EarningsProcessor, PipelineEvent, ProcessRequest};
 use vetta_core::stt::local::LocalSttStrategy;
-use vetta_core::stt::{SpeechToText, TranscribeOptions};
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum CliQuarter {
@@ -32,7 +30,7 @@ impl From<CliQuarter> for CoreQuarter {
 
 #[derive(Subcommand)]
 pub enum EarningsAction {
-    /// Process an audio/video file through the analysis pipeline  
+    /// Process an audio/video file through the analysis pipeline
     Process {
         #[arg(short, long, value_name = "FILE")]
         file: PathBuf,
@@ -46,146 +44,115 @@ pub enum EarningsAction {
         #[arg(short, long, value_enum)]
         quarter: CliQuarter,
 
-        /// Dump raw transcript to a file  
-        #[arg(
-            long,
-            value_name = "PATH",
-            conflicts_with = "print",
-            required_unless_present = "print"
-        )]
+        /// Dump raw transcript to a file
+        #[arg(long, value_name = "PATH", conflicts_with = "print")]
         out: Option<PathBuf>,
 
         /// Stream transcript to stdout
-        #[arg(long, required_unless_present = "out")]
+        #[arg(long)]
         print: bool,
     },
 }
 
 pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Result<()> {
-    match action {
-        EarningsAction::Process {
-            file,
-            ticker,
-            year,
-            quarter,
-            out,
-            print,
-        } => {
-            let core_quarter: CoreQuarter = quarter.into();
+    let EarningsAction::Process {
+        file,
+        ticker,
+        year,
+        quarter,
+        out,
+        print,
+    } = action;
 
-            let file_path = std::fs::canonicalize(&file)
-                .into_diagnostic()
-                .wrap_err("Failed to resolve input path")?;
+    let file_path = std::fs::canonicalize(&file).into_diagnostic()?;
 
-            if !quiet {
-                print_banner(&ticker, &core_quarter, year, &file_path, socket);
-            }
+    let stt = LocalSttStrategy::connect(socket.to_string_lossy())
+        .await
+        .into_diagnostic()?;
 
-            // ── Stage 1: Validation ──────────────────────────────
-            let file_info = validate_media_file(&file_path.to_string_lossy())
-                .wrap_err("Validation phase failed")?;
+    if !quiet {
+        print_banner(&ticker, &quarter.clone().into(), year, &file_path, socket);
+    }
 
-            if !quiet {
-                println!("   {}", "✔ VALIDATION PASSED".green().bold());
-                println!("   {:<10} {}", "Format:".dimmed(), file_info);
-                println!();
-                println!("   {}", "Processing Pipeline:".bold().blue());
-                println!("   1. [✔] Validation");
-                println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
-            }
+    let processor = EarningsProcessor::from_env(Box::new(stt))
+        .await
+        .into_diagnostic()?;
 
-            // ── Stage 2: Transcription ───────────────────────────
-            let stt = LocalSttStrategy::connect(socket.to_string_lossy())
-                .await
-                .into_diagnostic()
-                .wrap_err_with(|| {
-                    format!("Failed to connect to STT service at '{}'", socket.display())
-                })?;
-
-            let options = TranscribeOptions {
+    let transcript = processor
+        .process(
+            ProcessRequest {
+                file_path: file_path.to_string_lossy().into(),
+                ticker,
+                year,
+                quarter: quarter.into(),
                 language: Some("en".into()),
                 initial_prompt: Some(
-                    "Earnings call transcript. Financial terminology, company names, analyst questions and management responses."
-                        .into(),
+                    "Earnings call transcript. Financial terminology, company names, analyst \
+                    questions and management responses.".into(),
                 ),
-                diarization: false,
-                num_speakers: 2,
-            };
-
-            const STREAM_START_TIMEOUT: Duration = Duration::from_secs(120);
-            const CHUNK_READ_TIMEOUT: Duration = Duration::from_secs(300);
-
-            let mut stream = timeout(
-                STREAM_START_TIMEOUT,
-                stt.transcribe(&file_path.to_string_lossy(), options),
-            )
-            .await
-            .into_diagnostic()
-            .wrap_err("Transcription stream startup timed out")?
-            .into_diagnostic()
-            .wrap_err("Transcription failed")?;
-
-            let mut segment_count = 0u32;
-            let mut full = String::new();
-
-            loop {
-                let maybe_result = timeout(CHUNK_READ_TIMEOUT, stream.next())
-                    .await
-                    .into_diagnostic()
-                    .wrap_err_with(|| {
-                        format!(
-                            "Timed out waiting for transcript chunk after segment {segment_count} \
-                                (no data received within {}s)",
-                            CHUNK_READ_TIMEOUT.as_secs()
-                        )
-                    })?;
-
-                let Some(result) = maybe_result else {
-                    break; // stream exhausted  
-                };
-
-                let chunk = result
-                    .into_diagnostic()
-                    .wrap_err("Error reading transcript chunk")?;
-                segment_count += 1;
-
-                let line = chunk.text.trim_end();
-                if !line.is_empty() {
-                    full.push_str(line);
-                    full.push('\n');
+            },
+            |event| match event {
+                PipelineEvent::ValidationPassed { format_info } => {
+                    if !quiet {
+                        println!("   {}", "✔ VALIDATION PASSED".green().bold());
+                        println!("   {:<10} {}", "Format:".dimmed(), format_info);
+                        println!();
+                        println!("   {}", "Processing Pipeline:".bold().blue());
+                        println!("   1. [✔] Validation");
+                        println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
+                    }
                 }
-
-                if !quiet {
-                    print!("\r\x1B[K   Transcribing… {} segments", segment_count);
-                    let _ = io::stdout().flush();
+                PipelineEvent::TranscriptionProgress { segments } => {
+                    if !quiet {
+                        print!("\r\x1B[K   Transcribing… {segments} segments");
+                        let _ = io::stdout().flush();
+                    }
                 }
-            }
-
-            if !quiet {
-                println!("\r\x1B[K   2. [✔] Transcription ({segment_count} segments)");
-            }
-
-            // ── Stage 3: Output ──────────────────────────────────
-            if let Some(ref path) = out {
-                output::write_file(path, &full)?;
-                if !quiet {
-                    println!("   {:<10} {}", "OUTPUT:".dimmed(), path.display());
+                PipelineEvent::TranscriptionComplete { ref transcript } => {
+                    if !quiet {
+                        let seg_count = transcript.segments.len();
+                        let speaker_count = transcript.unique_speakers().len();
+                        println!(
+                            "\r\x1B[K   2. [✔] Transcription ({seg_count} segments, {speaker_count} speakers)"
+                        );
+                    }
                 }
-            }
+                PipelineEvent::StoringChunks { chunk_count } => {
+                    if !quiet {
+                        print!("   3. [{}] Storing {chunk_count} chunks…", "RUNNING".yellow());
+                        let _ = io::stdout().flush();
+                    }
+                }
+                PipelineEvent::Stored { ref call_id, chunk_count } => {
+                    if !quiet {
+                        println!(
+                            "\r\x1B[K   3. [✔] Stored ({chunk_count} chunks → {call_id})"
+                        );
+                    }
+                }
+            },
+        )
+        .await
+        .into_diagnostic()?;
 
-            if print {
-                output::write_stdout(&full)?;
-            }
+    // Format output as dialogue with speaker labels
+    let output_text = transcript.to_string();
 
-            if !quiet {
-                println!();
-                println!("   {}", "✔ PIPELINE COMPLETE".green().bold());
-                println!();
-            }
-
-            Ok(())
-        }
+    if let Some(ref path) = out {
+        output::write_file(path, &output_text)?;
     }
+
+    if print {
+        output::print_transcript(&transcript)?;
+    }
+
+    if !quiet {
+        println!();
+        println!("   {}", "✔ PIPELINE COMPLETE".green().bold());
+        println!();
+    }
+
+    Ok(())
 }
 
 fn print_banner(

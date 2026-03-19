@@ -8,7 +8,7 @@ pub enum SttError {
     Connection(#[from] tonic::transport::Error),
 
     #[error("STT service error: {0}")]
-    Service(#[from] tonic::Status),
+    Service(Box<tonic::Status>),
 
     #[error("Socket not found: {0}")]
     #[diagnostic(help("Start the whisper service or check the socket path in config.toml"))]
@@ -17,4 +17,10 @@ pub enum SttError {
     #[error("Audio file not found: {0}")]
     #[diagnostic(help("Check that the file path is correct and the file exists"))]
     AudioFileNotFound(String),
+}
+
+impl From<tonic::Status> for SttError {
+    fn from(status: tonic::Status) -> Self {
+        SttError::Service(Box::new(status))
+    }
 }

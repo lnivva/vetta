@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import grpc
 import pytest
 
+from audio import AudioValidationError
 from servicer import WhisperServicer
 from settings import (
     Settings,
@@ -13,6 +14,7 @@ from settings import (
     ModelConfig,
     InferenceConfig,
     ConcurrencyConfig,
+    DiarizationConfig,
 )
 from speech import speech_pb2
 
@@ -39,7 +41,43 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
         ),
         inference=InferenceConfig(**inference_defaults),
         concurrency=ConcurrencyConfig(max_workers=1, cpu_threads=2, num_workers=1),
+        diarization=DiarizationConfig(
+            model="pyannote/speaker-diarization-3.1",
+            max_speakers=0,
+            min_speakers=0,
+            hf_token="",
+            enabled=False,
+            device="cuda",
+        ),
     )
+
+
+def _make_mock_options(initial_prompt="", diarization=False, num_speakers=0):
+    """Build a mock options object that behaves like a protobuf message."""
+    options = MagicMock()
+    options.initial_prompt = initial_prompt
+    options.diarization = diarization
+    options.num_speakers = num_speakers
+
+    def _has_field(name):
+        if name == "num_speakers" and num_speakers > 0:
+            return True
+        return False
+
+    options.HasField = _has_field
+    return options
+
+
+def make_request(path="test.mp3", language="en", initial_prompt=""):
+    """
+    Create a mocked gRPC request object configured to represent a 'path' payload.
+    """
+    req = MagicMock()
+    req.WhichOneof.return_value = "path"
+    req.path = path
+    req.language = language
+    req.options = _make_mock_options(initial_prompt=initial_prompt)
+    return req
 
 
 @pytest.fixture
@@ -51,103 +89,159 @@ def servicer(mock_whisper_model, tmp_path):
     return svc
 
 
-def make_request(path="test.mp3", language="en", initial_prompt=""):
-    """
-    Create a mocked gRPC request object configured to represent a 'path' payload.
-    Synchronized with speech.proto 'oneof audio_source'.
-    """
-    options = MagicMock()
-    options.initial_prompt = initial_prompt
-    req = MagicMock()
+def _stub_resolve(servicer, audio_input, log_source="test.mp3", source_type="path"):
+    """Replace the resolver so it returns the given audio_input directly."""
+    servicer._resolver.resolve = MagicMock(
+        return_value=(audio_input, log_source, source_type)
+    )
 
-    # The oneof field name in .proto is 'path'
-    req.WhichOneof.return_value = "path"
-    req.path = path
 
-    req.language = language
-    req.options = options
-    return req
+def _stub_preprocessor(servicer):
+    """Replace the preprocessor so it passes audio through unchanged."""
+    servicer._preprocessor.prepare = MagicMock(
+        side_effect=lambda audio, diarize=False: (audio, None)
+    )
+
+
+def _prepare_servicer(
+    servicer, audio_input="test.mp3", log_source="test.mp3", source_type="path"
+):
+    """Wire up both resolver and preprocessor stubs for a standard test."""
+    _stub_resolve(servicer, audio_input, log_source, source_type)
+    _stub_preprocessor(servicer)
 
 
 class TestWhisperServicer:
     def test_yields_transcript_chunks(self, servicer):
+        _prepare_servicer(servicer)
         chunks = list(servicer.Transcribe(make_request(), context=MagicMock()))
         assert len(chunks) == 1
         assert isinstance(chunks[0], speech_pb2.TranscriptChunk)
 
     def test_text_is_stripped(self, servicer):
+        _prepare_servicer(servicer)
         chunks = list(servicer.Transcribe(make_request(), context=MagicMock()))
         assert chunks[0].text == "Hello world"
 
     def test_timing_fields(self, servicer):
+        _prepare_servicer(servicer)
         chunks = list(servicer.Transcribe(make_request(), context=MagicMock()))
         assert chunks[0].start_time == pytest.approx(0.0)
         assert chunks[0].end_time == pytest.approx(3.5)
 
     def test_request_initial_prompt_takes_priority(self, servicer, mock_whisper_model):
+        _prepare_servicer(servicer)
         list(
             servicer.Transcribe(
                 make_request(initial_prompt="Custom prompt"), MagicMock()
             )
         )
         call_kwargs = mock_whisper_model.transcribe.call_args.kwargs
-        # Ensure prompt is passed to the underlying model
         assert call_kwargs["initial_prompt"] == "Custom prompt"
 
     def test_vad_parameters_passed(self, servicer, mock_whisper_model):
+        _prepare_servicer(servicer)
         list(servicer.Transcribe(make_request(), MagicMock()))
         call_kwargs = mock_whisper_model.transcribe.call_args.kwargs
         assert call_kwargs["vad_filter"] is True
         assert call_kwargs["vad_parameters"]["min_silence_duration_ms"] == 500
 
-    def test_audio_data_payload_uses_bytesio(self, servicer, mock_whisper_model):
-        """Verifies raw 'data' bytes are wrapped in BytesIO."""
-        req = MagicMock()
-        req.WhichOneof.return_value = "data"  # .proto field is 'data'
-        req.data = b"fake wav bytes"
-        req.language = "en"
-        req.options.initial_prompt = ""
-
-        list(servicer.Transcribe(req, MagicMock()))
-
-        audio_input = mock_whisper_model.transcribe.call_args[0][0]
-        assert isinstance(audio_input, io.BytesIO)
-        assert audio_input.read() == b"fake wav bytes"
-
-    @patch("servicer.requests.get")
-    def test_audio_uri_payload_fetches_file(
-        self, mock_get, servicer, mock_whisper_model
+    def test_audio_data_payload_flows_through_preprocessor(
+        self, servicer, mock_whisper_model
     ):
-        """Verifies 'uri' is fetched and passed as BytesIO."""
-        mock_response = MagicMock()
-        mock_response.content = b"downloaded bytes"
-        mock_response.headers = {}
-        mock_get.return_value.__enter__.return_value = mock_response
+        """
+        Verifies that for a 'data' payload the resolver's output is handed
+        to _preprocessor.prepare(), and the preprocessor's return value
+        (not the raw resolver output) is what reaches model.transcribe().
+        """
+        raw_bytes = b"fake wav bytes"
+        resolver_output = io.BytesIO(raw_bytes)
+
+        # Resolver returns the BytesIO wrapper
+        servicer._resolver.resolve = MagicMock(
+            return_value=(resolver_output, "<bytes>", "data")
+        )
+
+        # Preprocessor should receive exactly what the resolver returned,
+        # and its output is what the model should see.
+        preprocessed_audio = MagicMock(name="preprocessed_ndarray")
+        servicer._preprocessor.prepare = MagicMock(
+            return_value=(preprocessed_audio, None)
+        )
 
         req = MagicMock()
-        req.WhichOneof.return_value = "uri"  # .proto field is 'uri'
-        req.uri = "https://example.com/audio.wav"
+        req.WhichOneof.return_value = "data"
+        req.data = raw_bytes
         req.language = "en"
-        req.options.initial_prompt = ""
+        req.options = _make_mock_options()
 
         list(servicer.Transcribe(req, MagicMock()))
 
-        mock_get.assert_called_once_with(
-            "https://example.com/audio.wav", timeout=15, stream=True
+        # Assert the preprocessor received the resolver's output
+        servicer._preprocessor.prepare.assert_called_once()
+        prep_args, prep_kwargs = servicer._preprocessor.prepare.call_args
+        assert prep_args[0] is resolver_output
+
+        # Assert the model received the preprocessor's output, not the raw BytesIO
+        model_audio_arg = mock_whisper_model.transcribe.call_args[0][0]
+        assert model_audio_arg is preprocessed_audio
+
+    def test_audio_uri_payload_flows_through_preprocessor(
+        self, servicer, mock_whisper_model
+    ):
+        """
+        Verifies that for a 'uri' payload the resolver's output is handed
+        to _preprocessor.prepare(), and the preprocessor's return value
+        is what reaches model.transcribe().
+        """
+        downloaded_bytes = b"downloaded bytes"
+        resolver_output = io.BytesIO(downloaded_bytes)
+        uri = "https://example.com/audio.wav"
+
+        servicer._resolver.resolve = MagicMock(
+            return_value=(resolver_output, uri, "uri")
         )
-        audio_input = mock_whisper_model.transcribe.call_args[0][0]
-        assert isinstance(audio_input, io.BytesIO)
-        assert audio_input.read() == b"downloaded bytes"
+
+        preprocessed_audio = MagicMock(name="preprocessed_ndarray")
+        servicer._preprocessor.prepare = MagicMock(
+            return_value=(preprocessed_audio, None)
+        )
+
+        req = MagicMock()
+        req.WhichOneof.return_value = "uri"
+        req.uri = uri
+        req.language = "en"
+        req.options = _make_mock_options()
+
+        list(servicer.Transcribe(req, MagicMock()))
+
+        # Assert the preprocessor received the resolver's output
+        servicer._preprocessor.prepare.assert_called_once()
+        prep_args, prep_kwargs = servicer._preprocessor.prepare.call_args
+        assert prep_args[0] is resolver_output
+
+        # Assert the model received the preprocessor's output, not the raw BytesIO
+        model_audio_arg = mock_whisper_model.transcribe.call_args[0][0]
+        assert model_audio_arg is preprocessed_audio
 
     def test_invalid_audio_source_aborts(self, servicer):
         """Verifies abort if no valid field is set."""
+        servicer._resolver.resolve = MagicMock(
+            side_effect=AudioValidationError("No valid audio_source provided")
+        )
+
         req = MagicMock()
         req.WhichOneof.return_value = None
         context = MagicMock()
 
-        result = list(servicer.Transcribe(req, context))
+        class _Abort(Exception):
+            pass
 
-        assert len(result) == 0
+        context.abort.side_effect = _Abort
+
+        with pytest.raises(_Abort):
+            list(servicer.Transcribe(req, context))
+
         context.abort.assert_called_once_with(
             grpc.StatusCode.INVALID_ARGUMENT, "No valid audio_source provided"
         )

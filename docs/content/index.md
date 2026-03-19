@@ -10,7 +10,7 @@ hero:
       link: /guide/quick-start
     - theme: alt
       text: Architecture
-      link: /architecture/overview
+      link: /technical/architecture
 
 features:
   - title: Powerful semantic search
