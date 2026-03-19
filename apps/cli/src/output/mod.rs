@@ -1,5 +1,5 @@
-pub mod pretty;
 pub mod json;
+pub mod pretty;
 
 use crate::context::{AppContext, OutputMode};
 use miette::Result;

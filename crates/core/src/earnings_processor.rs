@@ -202,10 +202,7 @@ impl EarningsProcessor {
             num_speakers: None,
         };
 
-        let mut stream = self
-            .stt
-            .transcribe(&request.file_path, options)
-            .await?;
+        let mut stream = self.stt.transcribe(&request.file_path, options).await?;
 
         let mut segments: Vec<TranscriptSegment> = Vec::new();
 

@@ -4,8 +4,8 @@ use hyper_util::rt::TokioIo;
 use std::path::{Path, PathBuf};
 use tokio::net::UnixStream;
 use tokio_stream::StreamExt;
-use tonic::transport::{Endpoint, Uri};
 use tonic::Status;
+use tonic::transport::{Endpoint, Uri};
 use tower::service_fn;
 
 pub mod proto {
@@ -13,8 +13,8 @@ pub mod proto {
 }
 
 use proto::{
-    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
     TranscribeOptions as ProtoOptions, TranscribeRequest,
+    speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
 };
 
 pub struct LocalSttStrategy {
@@ -26,9 +26,7 @@ impl LocalSttStrategy {
         let path = socket.as_ref();
 
         if !path.exists() {
-            return Err(SttError::SocketNotFound(
-                path.to_string_lossy().to_string(),
-            ));
+            return Err(SttError::SocketNotFound(path.to_string_lossy().to_string()));
         }
 
         Ok(Self {
@@ -42,9 +40,7 @@ impl LocalSttStrategy {
         let channel = Endpoint::try_from("http://localhost")?
             .connect_with_connector(service_fn(move |_: Uri| {
                 let path = path.clone();
-                async move {
-                    UnixStream::connect(&path).await.map(TokioIo::new)
-                }
+                async move { UnixStream::connect(&path).await.map(TokioIo::new) }
             }))
             .await?;
 

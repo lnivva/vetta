@@ -2,12 +2,7 @@ use clap::{Subcommand, ValueEnum};
 use miette::{IntoDiagnostic, Result};
 use std::path::PathBuf;
 
-use crate::{
-    context::AppContext,
-    infra::factory,
-    output,
-    reporter::PipelineReporter,
-};
+use crate::{context::AppContext, infra::factory, output, reporter::PipelineReporter};
 
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::{EarningsProcessor, ProcessRequest};

@@ -2,11 +2,7 @@ use miette::{IntoDiagnostic, Result};
 use std::path::Path;
 use vetta_core::domain::Transcript;
 
-pub fn emit(
-    transcript: &Transcript,
-    out: Option<&Path>,
-    print: bool,
-) -> Result<()> {
+pub fn emit(transcript: &Transcript, out: Option<&Path>, print: bool) -> Result<()> {
     let text = transcript.to_string();
 
     if let Some(path) = out {

@@ -24,7 +24,10 @@ impl PipelineReporter {
                 print!("\rTranscribing… {segments}");
             }
             PipelineEvent::TranscriptionComplete { transcript } => {
-                println!("\n✔ Transcription complete ({} segments)", transcript.segments.len());
+                println!(
+                    "\n✔ Transcription complete ({} segments)",
+                    transcript.segments.len()
+                );
             }
             PipelineEvent::Stored { call_id, .. } => {
                 println!("✔ Stored → {}", call_id);
