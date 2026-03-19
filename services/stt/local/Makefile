@@ -16,6 +16,7 @@ proto: clean-proto
 
 	@echo "Ensuring Python packages..."
 	find $(PROTO_OUT) -name "*_pb2.py" -execdir touch __init__.py \;
+	@$(MAKE) proto-check
 
 clean-proto:
 	@echo "Cleaning generated protobuf files..."
