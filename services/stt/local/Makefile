@@ -3,7 +3,11 @@ PROTO_OUT = .
 
 PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 
-.PHONY: proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check
+.PHONY: all clean proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check
+
+all: proto
+
+clean: clean-proto
 
 proto: clean-proto
 	@echo "Generating protobuf/gRPC code..."
