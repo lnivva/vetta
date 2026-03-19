@@ -192,10 +192,10 @@ class DiarizationPipeline:
         )
 
     def run(
-        self,
-        audio_input: str | io.BytesIO,
-        min_speakers: int = 0,
-        max_speakers: int = 0,
+            self,
+            audio_input: str | io.BytesIO,
+            min_speakers: int = 0,
+            max_speakers: int = 0,
     ) -> DiarizationResult:
         """
         Run speaker diarization on the provided audio.
@@ -214,17 +214,30 @@ class DiarizationPipeline:
         if isinstance(audio_input, io.BytesIO):
             audio_input.seek(0)
 
-        params: dict[str, int] = {}
         effective_min = min_speakers or self.default_min_speakers
         effective_max = max_speakers or self.default_max_speakers
 
-        if effective_min > 0:
-            params["min_speakers"] = effective_min
-        if effective_max > 0:
-            params["max_speakers"] = effective_max
+        if effective_min > 0 and 0 < effective_max < effective_min:
+            raise ValueError(
+                f"min_speakers ({effective_min}) cannot be greater than "
+                f"max_speakers ({effective_max})"
+            )
 
-        logger.debug("Running diarization", extra={"params": params})
-        result = self.pipeline(audio_input, **params)  # type: ignore[arg-type]
+        if effective_min <= 0 or effective_max <= 0:
+            raise ValueError(
+                f"min_speakers ({effective_min}) and max_speakers ({effective_max}) must be > 0"
+            )
+
+        logger.debug(
+            "Running diarization",
+            extra={"min_speakers": effective_min, "max_speakers": effective_max},
+        )
+
+        result = self.pipeline(
+            audio_input,
+            min_speakers=effective_min,
+            max_speakers=effective_max,
+        )
 
         annotation = self._extract_annotation(result)
 
