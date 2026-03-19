@@ -5,12 +5,13 @@ use crate::db::models::{
 use crate::db::{Db, DbError};
 use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::options::IndexOptions;
-use mongodb::{Collection, IndexModel};
+use mongodb::{Client, Collection, IndexModel};
 
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
 
 pub struct EarningsRepository {
+    client: Client,
     calls: Collection<EarningsCallDocument>,
     chunks: Collection<EarningsChunkDocument>,
 }
@@ -38,12 +39,13 @@ pub struct SegmentInput {
 impl EarningsRepository {
     pub fn new(db: &Db) -> Self {
         Self {
+            client: db.client().clone(),
             calls: db.collection::<EarningsCallDocument>(CALLS_COLLECTION),
             chunks: db.collection::<EarningsChunkDocument>(CHUNKS_COLLECTION),
         }
     }
 
-    /// Create required indexes. Idempotent — safe to call on every startup.
+    /// Create required indexes.
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
         // --- earnings_calls indexes ---
         self.calls
@@ -116,23 +118,30 @@ impl EarningsRepository {
             .map(|s| s.text.split_whitespace().count() as u32)
             .sum();
 
+        // Capture fields needed after call_doc consumes parts of `req`.
+        let ticker = req.ticker.clone();
+        let year = req.year;
+        let quarter = req.quarter.clone();
+        let stt_model = req.stt_model.clone();
+        let segment_count = req.segments.len() as u32;
+
         // --- Build the call document ---
         let call_doc = EarningsCallDocument {
             id: None,
-            ticker: req.ticker.clone(),
-            year: req.year,
-            quarter: req.quarter.clone(),
+            ticker: ticker.clone(),
+            year,
+            quarter: quarter.clone(),
             company: None,
             call_date: None,
             source: SourceMetadata {
-                file_name: req.file_name,
-                file_hash: req.file_hash,
-                format: req.format,
+                file_name: req.file_name, // moved
+                file_hash: req.file_hash, // moved
+                format: req.format,       // moved
                 duration_seconds: req.duration_seconds,
                 ingested_at: now,
             },
             stats: TranscriptStats {
-                segment_count: req.segments.len() as u32,
+                segment_count,
                 turn_count: turns.len() as u32,
                 speaker_count: unique_speakers.len() as u32,
                 word_count,
@@ -151,32 +160,90 @@ impl EarningsRepository {
             transcript: TranscriptData {
                 segments: req
                     .segments
-                    .iter()
+                    .into_iter() // consume segments here
                     .map(|s| SegmentData {
                         start_time: s.start_time,
                         end_time: s.end_time,
-                        text: s.text.clone(),
-                        speaker_id: s.speaker_id.clone(),
+                        text: s.text,
+                        speaker_id: s.speaker_id,
                     })
                     .collect(),
             },
             status: CallStatus::Transcribed,
             model_versions: ModelVersions {
-                stt: req.stt_model.clone(),
+                stt: stt_model.clone(),
                 embedding: None,
                 embedding_dimensions: None,
             },
             updated_at: now,
         };
 
-        // Insert call document
-        let call_result = self.calls.insert_one(call_doc).await.map_err(|e| {
-            if is_duplicate_key(&e) {
-                DbError::Duplicate(format!("{} {} {}", req.ticker, req.quarter, req.year))
-            } else {
-                DbError::from(e)
+        // --- Start a session and transaction ---
+        let mut session = self
+            .client
+            .start_session()
+            .await
+            .map_err(|e| DbError::Connection(format!("Failed to start session: {e}")))?;
+
+        session
+            .start_transaction()
+            .await
+            .map_err(|e| DbError::QueryFailure(format!("Failed to start transaction: {e}")))?;
+
+        // Wrap all writes so we can abort on any failure.
+        let result = self
+            .store_in_transaction(
+                &mut session,
+                &ticker,
+                year,
+                &quarter,
+                &stt_model,
+                call_doc,
+                &turns,
+                now,
+            )
+            .await;
+
+        match result {
+            Ok(call_id) => {
+                session.commit_transaction().await.map_err(|e| {
+                    DbError::QueryFailure(format!("Failed to commit transaction: {e}"))
+                })?;
+                Ok(call_id)
             }
-        })?;
+            Err(e) => {
+                // Best-effort abort — if this fails the server will auto-abort
+                // when the session expires.
+                let _ = session.abort_transaction().await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn store_in_transaction(
+        &self,
+        session: &mut mongodb::ClientSession,
+        ticker: &str,
+        year: u16,
+        quarter: &str,
+        stt_model: &str,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+        now: DateTime,
+    ) -> Result<ObjectId, DbError> {
+        // Insert call document
+        let call_result = self
+            .calls
+            .insert_one(call_doc)
+            .session(&mut *session)
+            .await
+            .map_err(|e| {
+                if is_duplicate_key(&e) {
+                    DbError::Duplicate(format!("{} {} {}", ticker, quarter, year))
+                } else {
+                    DbError::from(e)
+                }
+            })?;
 
         let call_id = call_result
             .inserted_id
@@ -188,15 +255,15 @@ impl EarningsRepository {
             .iter()
             .enumerate()
             .map(|(i, turn)| {
-                let context = build_context(&turns, i);
-                let word_count = turn.text.split_whitespace().count() as u32;
+                let context = build_context(turns, i);
+                let wc = turn.text.split_whitespace().count() as u32;
 
                 EarningsChunkDocument {
                     id: None,
                     call_id,
-                    ticker: req.ticker.clone(),
-                    year: req.year,
-                    quarter: req.quarter.clone(),
+                    ticker: ticker.to_string(),
+                    year,
+                    quarter: quarter.to_string(),
                     call_date: None,
                     sector: None,
                     chunk_index: i as u32,
@@ -211,10 +278,10 @@ impl EarningsRepository {
                     end_time: turn.end_time,
                     text: turn.text.clone(),
                     context: Some(context),
-                    embedding: None, // populated later by embedding pipeline
-                    word_count,
+                    embedding: None,
+                    word_count: wc,
                     token_count: None,
-                    model_version: req.stt_model.clone(),
+                    model_version: stt_model.to_string(),
                     created_at: now,
                 }
             })
@@ -227,6 +294,7 @@ impl EarningsRepository {
                 .chunks
                 .insert_many(chunk_docs)
                 .ordered(false)
+                .session(&mut *session)
                 .await
                 .map_err(DbError::from)?;
 
@@ -249,6 +317,7 @@ impl EarningsRepository {
                     }
                 },
             )
+            .session(&mut *session)
             .await?;
 
         Ok(call_id)

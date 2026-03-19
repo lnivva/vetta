@@ -5,6 +5,7 @@ use mongodb::{Client, Collection, Database, options::ClientOptions};
 use serde::{Deserialize, Serialize};
 
 pub struct Db {
+    client: Client,
     database: Database,
 }
 
@@ -22,14 +23,19 @@ impl Db {
         #[cfg(debug_assertions)]
         Self::ping_connection(&database).await?;
 
-        Ok(Self { database })
+        Ok(Self { client, database })
     }
 
     pub fn handle(&self) -> &Database {
         &self.database
     }
 
-    /// Get a typed collection handle.  
+    /// Get the underlying client.
+    pub fn client(&self) -> &Client {
+        &self.client
+    }
+
+    /// Get a typed collection handle.
     pub fn collection<T>(&self, name: &str) -> Collection<T>
     where
         T: Serialize + for<'de> Deserialize<'de> + Unpin + Send + Sync,
