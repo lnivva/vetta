@@ -44,6 +44,14 @@ pub struct SegmentInput {
     pub speaker_id: String,
 }
 
+struct StoreTransactionContext<'a> {
+    ticker: &'a str,
+    year: u16,
+    quarter: &'a str,
+    stt_model: &'a str,
+    now: DateTime,
+}
+
 impl EarningsRepository {
     pub fn new(db: &Db) -> Self {
         Self {
@@ -198,17 +206,16 @@ impl EarningsRepository {
             .await
             .map_err(|e| DbError::QueryFailure(format!("Failed to start transaction: {e}")))?;
 
+        let ctx = StoreTransactionContext {
+            ticker: &ticker,
+            year,
+            quarter: &quarter,
+            stt_model: &stt_model,
+            now,
+        };
+
         let result = self
-            .store_in_transaction(
-                &mut session,
-                &ticker,
-                year,
-                &quarter,
-                &stt_model,
-                call_doc,
-                &turns,
-                now,
-            )
+            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
             .await;
 
         match result {
@@ -228,13 +235,9 @@ impl EarningsRepository {
     async fn store_in_transaction(
         &self,
         session: &mut mongodb::ClientSession,
-        ticker: &str,
-        year: u16,
-        quarter: &str,
-        stt_model: &str,
+        ctx: &StoreTransactionContext<'_>,
         call_doc: EarningsCallDocument,
         turns: &[DialogueTurn],
-        now: DateTime,
     ) -> Result<ObjectId, DbError> {
         // Insert call document
         let call_result = self
@@ -244,7 +247,7 @@ impl EarningsRepository {
             .await
             .map_err(|e| {
                 if is_duplicate_key(&e) {
-                    DbError::Duplicate(format!("{} {} {}", ticker, quarter, year))
+                    DbError::Duplicate(format!("{} {} {}", ctx.ticker, ctx.quarter, ctx.year))
                 } else {
                     DbError::from(e)
                 }
@@ -266,9 +269,9 @@ impl EarningsRepository {
                 EarningsChunkDocument {
                     id: None,
                     call_id,
-                    ticker: ticker.to_string(),
-                    year,
-                    quarter: quarter.to_string(),
+                    ticker: ctx.ticker.to_string(),
+                    year: ctx.year,
+                    quarter: ctx.quarter.to_string(),
                     call_date: None,
                     sector: None,
                     chunk_index: i as u32,
@@ -286,8 +289,8 @@ impl EarningsRepository {
                     embedding: None,
                     word_count: wc,
                     token_count: None,
-                    model_version: stt_model.to_string(),
-                    created_at: now,
+                    model_version: ctx.stt_model.to_string(),
+                    created_at: ctx.now,
                 }
             })
             .collect();
@@ -364,8 +367,6 @@ impl EarningsRepository {
         Ok(chunks)
     }
 
-    /// Update embeddings for a batch of chunks.
-    /// Pairs are (chunk_id, embedding_vector).
     pub async fn update_embeddings(
         &self,
         updates: Vec<(ObjectId, Vec<f32>)>,
