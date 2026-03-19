@@ -10,6 +10,7 @@ use serde::Deserialize;
 
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
+const UNKNOWN_SPEAKER: &str = "UNKNOWN";
 
 /// Lightweight projection struct used when we only need document IDs.
 #[derive(Debug, Deserialize)]
@@ -449,20 +450,23 @@ fn build_dialogue_turns(segments: &[SegmentInput]) -> Vec<DialogueTurn> {
             continue;
         }
 
-        match turns.last_mut() {
-            Some(last) if last.speaker_id == seg.speaker_id => {
-                last.text.push(' ');
-                last.text.push_str(text);
-                last.end_time = seg.end_time;
-            }
-            _ => {
-                turns.push(DialogueTurn {
-                    speaker_id: seg.speaker_id.clone(),
-                    start_time: seg.start_time,
-                    end_time: seg.end_time,
-                    text: text.to_string(),
-                });
-            }
+        let can_merge = match turns.last() {
+            Some(last) => !last.speaker_id.is_empty() && last.speaker_id == seg.speaker_id,
+            None => false,
+        };
+
+        if can_merge {
+            let last = turns.last_mut().expect("checked above");
+            last.text.push(' ');
+            last.text.push_str(text);
+            last.end_time = seg.end_time;
+        } else {
+            turns.push(DialogueTurn {
+                speaker_id: seg.speaker_id.clone(),
+                start_time: seg.start_time,
+                end_time: seg.end_time,
+                text: text.to_string(),
+            });
         }
     }
 
@@ -497,8 +501,13 @@ fn build_context(turns: &[DialogueTurn], index: usize) -> ChunkContext {
 fn unique_speaker_ids(segments: &[SegmentInput]) -> Vec<String> {
     let mut speakers: Vec<String> = segments
         .iter()
-        .map(|s| s.speaker_id.clone())
-        .filter(|s| !s.is_empty())
+        .map(|s| {
+            if s.speaker_id.is_empty() {
+                UNKNOWN_SPEAKER.to_string()
+            } else {
+                s.speaker_id.clone()
+            }
+        })
         .collect();
     speakers.sort();
     speakers.dedup();
