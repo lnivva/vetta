@@ -1,5 +1,11 @@
 """
 gRPC Servicer for the Whisper Speech-to-Text service.
+
+This module coordinates the transcription flow:
+1. resolve and preprocess audio.
+2. optionally run diarization.
+3. transcribe with Whisper.
+4. stream transcript chunks back to the caller.
 """
 
 import logging
@@ -15,7 +21,6 @@ from audio import (
     AudioFetchError,
     AudioDecodeError,
 )
-from diarization import DiarizationPipeline, DiarizationResult
 from settings import Settings
 from speech import speech_pb2_grpc, speech_pb2
 
@@ -24,23 +29,42 @@ logger = logging.getLogger(__name__)
 _INFERENCE_ERRORS = (RuntimeError, ValueError, OSError)
 
 
+def _load_diarization():
+    """
+    Lazily import diarization dependencies.
+
+    This keeps the service usable when diarization support is not installed
+    or not enabled in the runtime environment.
+    """
+    try:
+        from diarization import DiarizationPipeline, DiarizationResult
+
+        return DiarizationPipeline, DiarizationResult
+    except Exception as e:
+        raise RuntimeError("Diarization dependencies are not installed.") from e
+
+
 class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
     """
-    gRPC servicer for handling Speech-to-Text operations with optional
-    speaker diarization.
+    gRPC service implementation for streaming speech-to-text responses.
 
-    When diarization is enabled, the pipeline runs in two phases:
-      1. Diarization runs first on the full audio (must see everything).
-      2. Whisper streams segments, each tagged with a speaker label via
-         temporal overlap against the cached diarization result.
-
-    This avoids buffering all segments before yielding, so the client
-    receives chunks as they are produced by Whisper.
+    The servicer owns:
+    - audio resolution and validation,
+    - Whisper model inference,
+    - optional speaker diarization,
+    - conversion of internal segments into protobuf messages.
     """
 
     def __init__(self, settings: Settings):
+        """
+        Initialize the service with runtime settings.
+
+        Diarization is intentionally initialized lazily so the service can
+        start even when diarization dependencies are missing.
+        """
         s = settings
         self.inference = s.inference
+
         self._resolver = AudioResolver(
             max_bytes=s.service.max_audio_size_mb * 1024 * 1024,
         )
@@ -55,9 +79,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             cpu_threads=s.concurrency.cpu_threads,
         )
 
-        self.diarizer: DiarizationPipeline | None = None
-        if s.diarization.enabled:
-            self.diarizer = DiarizationPipeline(s.diarization)
+        self._diarization_config = s.diarization
+        self.diarizer = None
 
         self._executor = ThreadPoolExecutor(max_workers=2)
 
@@ -65,13 +88,23 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     @staticmethod
     def _get_num_speakers(options) -> int:
+        """
+        Return the requested speaker count from request options.
+
+        If the field is absent, returns 0 so the diarizer can use defaults.
+        """
         if options.HasField("num_speakers"):
             return options.num_speakers
         return 0
 
     @staticmethod
     def _segment_to_chunk(segment, speaker_id: str = "") -> speech_pb2.TranscriptChunk:
-        """Convert a faster-whisper segment to a gRPC TranscriptChunk."""
+        """
+        Convert a Whisper segment into the protobuf transcript format.
+
+        The speaker ID is attached separately so diarization can enrich the
+        transcription output without changing Whisper inference output.
+        """
         return speech_pb2.TranscriptChunk(
             start_time=segment.start,
             end_time=segment.end,
@@ -93,37 +126,37 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     def Transcribe(self, request, context):
         """
-        Stream transcription chunks for the provided audio.
+        Stream a transcription response for the provided audio request.
 
-        When diarization is requested, the diarization pipeline runs
-        first on the full audio.  Then Whisper streams segments, each
-        assigned a speaker label on-the-fly via temporal overlap.
-
-        Yields:
-            speech_pb2.TranscriptChunk
+        When diarization is enabled, speaker labels are computed first and then
+        applied to each Whisper segment in the response stream.
         """
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None
 
-        # ── Resolve audio source ─────────────────────────────
+        # ── Resolve audio ─────────────────────────────
         try:
             audio, log_source, source_type = self._resolver.resolve(request)
         except (AudioValidationError, AudioFetchError) as exc:
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-        # ── Validate diarization request ─────────────────────
+        # ── Diarization flags ─────────────────────────
         diarize = request.options.diarization
-        if diarize and self.diarizer is None:
-            context.abort(
-                grpc.StatusCode.INVALID_ARGUMENT,
-                "Diarization requested but not enabled in server "
-                "configuration. Set [diarization] enabled = true in "
-                "config.toml.",
-            )
-            return
 
-        # ── Preprocess audio ─────────────────────────────────
+        if diarize:
+            if not self._diarization_config.enabled:
+                context.abort(
+                    grpc.StatusCode.INVALID_ARGUMENT,
+                    "Diarization requested but not enabled in config.",
+                )
+                return
+
+            if self.diarizer is None:
+                diarization_pipeline, _ = _load_diarization()
+                self.diarizer = diarization_pipeline(self._diarization_config)
+
+        # ── Preprocess ────────────────────────────────
         try:
             whisper_input, diar_input = self._preprocessor.prepare(
                 audio,
@@ -133,16 +166,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-        # ── Phase 1: Diarization (if requested) ──────────────
-        diarization: DiarizationResult | None = None
+        # ── Phase 1: Diarization ──────────────────────
+        diarization = None
         if diarize and diar_input is not None:
-            logger.info(
-                "Running diarization (phase 1 of 2)",
-                extra={
-                    "audio_source_type": source_type,
-                    "audio_source": log_source,
-                },
-            )
             try:
                 diarization = self.diarizer.run(
                     diar_input,
@@ -150,27 +176,14 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     max_speakers=self._get_num_speakers(request.options),
                 )
             except _INFERENCE_ERRORS:
-                logger.exception(
-                    "Diarization pipeline failed",
-                    extra={
-                        "audio_source_type": source_type,
-                        "audio_source": log_source,
-                    },
-                )
+                logger.exception("Diarization failed")
                 context.abort(
                     grpc.StatusCode.INTERNAL,
-                    "Diarization pipeline failed. Check server logs for details.",
+                    "Diarization failed",
                 )
                 return
 
-            logger.info(
-                "Diarization complete, starting transcription stream",
-                extra={
-                    "num_speakers": len(diarization.labels()),
-                },
-            )
-
-        # ── Phase 2: Whisper streaming ────────────────────────
+        # ── Phase 2: Whisper ──────────────────────────
         try:
             segments, info = self.model.transcribe(
                 whisper_input,
@@ -187,53 +200,22 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 compression_ratio_threshold=inf.compression_ratio_threshold,
             )
         except _INFERENCE_ERRORS:
-            logger.exception(
-                "Whisper transcription failed to initialise",
-                extra={
-                    "audio_source_type": source_type,
-                    "audio_source": log_source,
-                },
-            )
-            context.abort(
-                grpc.StatusCode.INTERNAL,
-                "Transcription failed to initialise. Check server logs for details.",
-            )
+            logger.exception("Whisper failed")
+            context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-        logger.info(
-            "Transcription streaming started",
-            extra={
-                "language": info.language,
-                "language_probability": round(info.language_probability, 2),
-                "audio_source_type": source_type,
-                "audio_source": log_source,
-                "diarization": diarization is not None,
-            },
-        )
-
+        # ── Streaming ─────────────────────────────────
         try:
             for segment in segments:
                 if diarization is not None:
-                    speaker = diarization.speaker_at(
-                        segment.start,
-                        segment.end,
-                    )
+                    speaker = diarization.speaker_at(segment.start, segment.end)
                 else:
                     speaker = ""
 
                 yield self._segment_to_chunk(segment, speaker_id=speaker)
+
         except grpc.RpcError:
             raise
         except _INFERENCE_ERRORS:
-            logger.exception(
-                "Whisper transcription failed mid-stream",
-                extra={
-                    "audio_source_type": source_type,
-                    "audio_source": log_source,
-                },
-            )
-            context.abort(
-                grpc.StatusCode.INTERNAL,
-                "Transcription failed mid-stream. Check server logs for details.",
-            )
-            return
+            logger.exception("Streaming failed")
+            context.abort(grpc.StatusCode.INTERNAL, "Streaming failed")
