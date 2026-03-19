@@ -14,7 +14,7 @@ import torch
 from pyannote.audio import Pipeline
 from pyannote.core import Annotation, Segment
 
-from settings import DiarizationConfig, Device
+from settings import DiarizationConfig
 
 logger = logging.getLogger(__name__)
 
