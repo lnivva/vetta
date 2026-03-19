@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::db::{Db, DbConfig, DbError, EarningsRepository, SegmentInput, StoreEarningsRequest};
 use crate::domain::{Quarter, Transcript, TranscriptSegment};
-use crate::stt::{SpeechToText, TranscribeOptions};
+use crate::stt::{Stt, SttError, TranscribeOptions};
 
 // ── Constants ────────────────────────────────────────────────
 
@@ -72,9 +72,9 @@ pub enum PipelineError {
     #[diagnostic(transparent)]
     Ingest(#[from] IngestError),
 
-    #[error("Transcription failed: {0}")]
-    #[diagnostic(code(vetta::pipeline::transcription))]
-    Transcription(String),
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Transcription(#[from] SttError),
 
     #[error("Database error: {0}")]
     #[diagnostic(code(vetta::pipeline::database))]
@@ -157,16 +157,16 @@ pub fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
 // ── Orchestrator ─────────────────────────────────────────────
 
 pub struct EarningsProcessor {
-    stt: Box<dyn SpeechToText>,
+    stt: Box<dyn Stt>,
     db: Db,
 }
 
 impl EarningsProcessor {
-    pub fn new(stt: Box<dyn SpeechToText>, db: Db) -> Self {
+    pub fn new(stt: Box<dyn Stt>, db: Db) -> Self {
         Self { stt, db }
     }
 
-    pub async fn from_env(stt: Box<dyn SpeechToText>) -> Result<Self, PipelineError> {
+    pub async fn from_env(stt: Box<dyn Stt>) -> Result<Self, PipelineError> {
         let db_config = DbConfig::from_env().map_err(|e| PipelineError::Database(e.to_string()))?;
 
         let db = Db::connect(&db_config)
@@ -205,14 +205,13 @@ impl EarningsProcessor {
         let mut stream = self
             .stt
             .transcribe(&request.file_path, options)
-            .await
-            .map_err(|e| PipelineError::Transcription(e.to_string()))?;
+            .await?;
 
         let mut segments: Vec<TranscriptSegment> = Vec::new();
 
         use tokio_stream::StreamExt;
         while let Some(result) = stream.next().await {
-            let chunk = result.map_err(|e| PipelineError::Transcription(e.to_string()))?;
+            let chunk = result?;
 
             let text = chunk.text.trim().to_string();
             if !text.is_empty() {
