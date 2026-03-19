@@ -6,9 +6,17 @@ use crate::db::{Db, DbError};
 use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
+use serde::Deserialize;
 
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
+
+/// Lightweight projection struct used when we only need document IDs.
+#[derive(Debug, Deserialize)]
+struct IdOnly {
+    #[serde(rename = "_id")]
+    id: ObjectId,
+}
 
 pub struct EarningsRepository {
     client: Client,
@@ -45,7 +53,7 @@ impl EarningsRepository {
         }
     }
 
-    /// Create required indexes.
+    /// Create required indexes. Idempotent.
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
         // --- earnings_calls indexes ---
         self.calls
@@ -134,9 +142,9 @@ impl EarningsRepository {
             company: None,
             call_date: None,
             source: SourceMetadata {
-                file_name: req.file_name, // moved
-                file_hash: req.file_hash, // moved
-                format: req.format,       // moved
+                file_name: req.file_name,
+                file_hash: req.file_hash,
+                format: req.format,
                 duration_seconds: req.duration_seconds,
                 ingested_at: now,
             },
@@ -160,7 +168,7 @@ impl EarningsRepository {
             transcript: TranscriptData {
                 segments: req
                     .segments
-                    .into_iter() // consume segments here
+                    .into_iter()
                     .map(|s| SegmentData {
                         start_time: s.start_time,
                         end_time: s.end_time,
@@ -190,7 +198,6 @@ impl EarningsRepository {
             .await
             .map_err(|e| DbError::QueryFailure(format!("Failed to start transaction: {e}")))?;
 
-        // Wrap all writes so we can abort on any failure.
         let result = self
             .store_in_transaction(
                 &mut session,
@@ -212,8 +219,6 @@ impl EarningsRepository {
                 Ok(call_id)
             }
             Err(e) => {
-                // Best-effort abort — if this fails the server will auto-abort
-                // when the session expires.
                 let _ = session.abort_transaction().await;
                 Err(e)
             }
@@ -400,8 +405,9 @@ impl EarningsRepository {
     ) -> Result<Vec<ObjectId>, DbError> {
         use futures::TryStreamExt;
 
-        let cursor = self
-            .chunks
+        let untyped: Collection<IdOnly> = self.chunks.clone_with_type();
+
+        let cursor = untyped
             .find(doc! {
                 "$or": [
                     { "embedding": null },
@@ -411,8 +417,8 @@ impl EarningsRepository {
             .projection(doc! { "_id": 1 })
             .await?;
 
-        let docs: Vec<EarningsChunkDocument> = cursor.try_collect().await?;
-        Ok(docs.into_iter().filter_map(|d| d.id).collect())
+        let docs: Vec<IdOnly> = cursor.try_collect().await?;
+        Ok(docs.into_iter().map(|d| d.id).collect())
     }
 
     /// Delete a call and all its associated chunks.
