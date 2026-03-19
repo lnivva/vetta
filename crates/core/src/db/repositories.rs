@@ -516,13 +516,14 @@ fn unique_speaker_ids(segments: &[SegmentInput]) -> Vec<String> {
 
 /// Truncate text to a max character length at a word boundary.
 fn truncate(text: &str, max_chars: usize) -> String {
-    if text.len() <= max_chars {
-        return text.to_string();
-    }
+    let end = match text.char_indices().nth(max_chars) {
+        Some((idx, _)) => idx,
+        None => return text.to_string(),
+    };
 
-    match text[..max_chars].rfind(' ') {
+    match text[..end].rfind(' ') {
         Some(pos) => format!("{}…", &text[..pos]),
-        None => format!("{}…", &text[..max_chars]),
+        None => format!("{}…", &text[..end]),
     }
 }
 
