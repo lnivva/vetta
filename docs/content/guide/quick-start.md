@@ -65,7 +65,7 @@ atlas local setup vetta-local \
 
 On first run the CLI pulls the required container images. Once ready you'll see:
 
-```  
+```text
 Deployment vetta-local created.  
 ```  
 
@@ -153,7 +153,7 @@ cargo run -- earnings process \
 
 The pipeline prints live progress as transcript chunks stream back:
 
-```
+```text
    VETTA FINANCIAL ENGINE
    ======================
 
