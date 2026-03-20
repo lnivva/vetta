@@ -13,8 +13,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
 
     writeln!(stdout).into_diagnostic()?;
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
-    writeln!(stdout, "   {}", "📄 TRANSCRIPT".bold().bright_white())
-        .into_diagnostic()?;
+    writeln!(stdout, "   {}", "📄 TRANSCRIPT".bold().bright_white()).into_diagnostic()?;
 
     writeln!(
         stdout,
@@ -23,7 +22,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         transcript.unique_speakers().len().to_string().cyan(),
         format_timestamp(transcript.duration()).cyan(),
     )
-        .into_diagnostic()?;
+    .into_diagnostic()?;
 
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
     writeln!(stdout).into_diagnostic()?;
@@ -71,13 +70,12 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
             speaker.color(color).bold(),
             format!("● [{}]", timestamp).dimmed(),
         )
-            .into_diagnostic()?;
+        .into_diagnostic()?;
 
         let wrapped = textwrap::fill(turn.text.trim(), text_width);
 
         for line in wrapped.lines() {
-            writeln!(stdout, "{}{}", text_indent.dimmed(), line)
-                .into_diagnostic()?;
+            writeln!(stdout, "{}{}", text_indent.dimmed(), line).into_diagnostic()?;
         }
     }
 
@@ -89,7 +87,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         "Total Duration:".dimmed(),
         format_timestamp(transcript.duration()).bold()
     )
-        .into_diagnostic()?;
+    .into_diagnostic()?;
     writeln!(stdout).into_diagnostic()?;
 
     stdout.flush().into_diagnostic()?;

@@ -54,7 +54,10 @@ impl PipelineReporter {
                 let _ = io::stdout().flush();
             }
 
-            PipelineEvent::Stored { call_id, chunk_count } => {
+            PipelineEvent::Stored {
+                call_id,
+                chunk_count,
+            } => {
                 println!(
                     "\r\x1B[K   3. [✔] Stored ({} chunks → {})",
                     chunk_count, call_id

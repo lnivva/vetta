@@ -7,7 +7,7 @@ mod reporter;
 
 use clap::Parser;
 use context::AppContext;
-use miette::{set_panic_hook, Result};
+use miette::{Result, set_panic_hook};
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -76,10 +76,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         (false, false) => OutputMode::Pretty,
     };
 
-    let reporter = PipelineReporter::new(
-        ctx,
-        matches!(output_mode, OutputMode::Pretty),
-    );
+    let reporter = PipelineReporter::new(ctx, matches!(output_mode, OutputMode::Pretty));
 
     let transcript = processor
         .process(
