@@ -83,7 +83,7 @@ pub enum PipelineError {
     #[error("Duplicate earnings call: {0}")]
     #[diagnostic(
         code(vetta::pipeline::duplicate),
-        help("This earnings call has already been processed. Use --force to overwrite.")
+        help("This earnings call has already been processed. Use --replace to overwrite.")
     )]
     Duplicate(String),
 }
