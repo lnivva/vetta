@@ -197,7 +197,6 @@ impl EarningsProcessor {
             format_info: format_info.clone(),
         });
 
-        // ── Check create_replace flag
         Self::ensure_not_duplicate(&request, &repo).await?;
 
         // ── Stage 2: Transcription ───────────────────────────
