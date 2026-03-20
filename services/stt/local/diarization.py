@@ -16,7 +16,7 @@ from settings import DiarizationConfig
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from pyannote.core import Annotation, Segment
+    pass
 
 
 @dataclass
