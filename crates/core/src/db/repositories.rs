@@ -3,7 +3,7 @@ use crate::db::models::{
     ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
 };
 use crate::db::{Db, DbError};
-use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
+use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
 use serde::Deserialize;
@@ -443,9 +443,9 @@ fn build_call_and_turns(
                 })
                 .collect(),
         },
-        status: CallStatus::Transcribed,
+        status: CallStatus::Chunked,
         model_versions: ModelVersions {
-            stt: "whisper-large-v3".into(),
+            stt: req.stt_model.clone(),
             embedding: None,
             embedding_dimensions: None,
         },
