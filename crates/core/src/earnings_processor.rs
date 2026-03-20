@@ -269,7 +269,11 @@ impl EarningsProcessor {
                 .collect(),
         };
 
-        let call_id = repo.store(store_request).await?;
+        let call_id = if request.replace {
+            repo.replace(store_request).await?
+        } else {
+            repo.store(store_request).await?
+        };
 
         on_event(PipelineEvent::Stored {
             call_id: call_id.to_hex(),

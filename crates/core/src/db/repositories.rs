@@ -3,7 +3,7 @@ use crate::db::models::{
     ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
 };
 use crate::db::{Db, DbError};
-use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
+use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
 use serde::Deserialize;
@@ -19,6 +19,8 @@ struct IdOnly {
     id: ObjectId,
 }
 
+/// Repository for storing, retrieving, and maintaining earnings call documents
+/// and their derived dialogue chunks.
 pub struct EarningsRepository {
     client: Client,
     calls: Collection<EarningsCallDocument>,
@@ -27,25 +29,39 @@ pub struct EarningsRepository {
 
 /// Request to store a new earnings call and its derived chunks.
 pub struct StoreEarningsRequest {
+    /// Stock ticker symbol.
     pub ticker: String,
+    /// Fiscal year of the call.
     pub year: u16,
+    /// Fiscal quarter, such as `Q1` or `Q4`.
     pub quarter: String,
+    /// Original uploaded file name.
     pub file_name: String,
+    /// Optional content hash for deduplication.
     pub file_hash: Option<String>,
+    /// Optional media format or container type.
     pub format: Option<String>,
+    /// Audio duration in seconds.
     pub duration_seconds: f32,
+    /// Speech-to-text model identifier used for transcription.
     pub stt_model: String,
+    /// Raw transcript segments to persist and chunk.
     pub segments: Vec<SegmentInput>,
 }
 
+/// Input segment used to build transcript turns and chunk documents.
 pub struct SegmentInput {
+    /// Segment start time in seconds.
     pub start_time: f32,
+    /// Segment end time in seconds.
     pub end_time: f32,
+    /// Recognized transcript text.
     pub text: String,
+    /// ASR-assigned speaker identifier.
     pub speaker_id: String,
 }
-
 impl EarningsRepository {
+    /// Create a new repository instance backed by the given database handle.
     pub fn new(db: &Db) -> Self {
         Self {
             client: db.client().clone(),
@@ -54,6 +70,7 @@ impl EarningsRepository {
         }
     }
 
+    /// Ensure all collection indexes required by the repository are present.
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
         // --- earnings_calls indexes ---
         self.calls
@@ -113,6 +130,7 @@ impl EarningsRepository {
         Ok(())
     }
 
+    /// Store a new call and all derived dialogue chunks in a single transaction.
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
 
@@ -138,10 +156,10 @@ impl EarningsRepository {
             }
         }
     }
-    pub async fn replace(
-        &self,
-        req: StoreEarningsRequest,
-    ) -> Result<ObjectId, DbError> {
+
+    /// Replace an existing call identified by its business key, deleting any
+    /// old chunks before inserting the new transcript and chunk set.
+    pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
 
         let (call_doc, turns) = build_call_and_turns(req, now);
@@ -186,7 +204,7 @@ impl EarningsRepository {
     async fn store_in_transaction(
         &self,
         session: &mut mongodb::ClientSession,
-        ctx: &StoreTransactionContext<'_>,
+        ctx: &StoreTransactionContext,
         call_doc: EarningsCallDocument,
         turns: &[DialogueTurn],
     ) -> Result<ObjectId, DbError> {
@@ -207,9 +225,9 @@ impl EarningsRepository {
             .map(|(i, t)| EarningsChunkDocument {
                 id: None,
                 call_id,
-                ticker: ctx.ticker.to_string(),
+                ticker: ctx.ticker.clone(),
                 year: ctx.year,
-                quarter: ctx.quarter.to_string(),
+                quarter: ctx.quarter.clone(),
                 call_date: None,
                 sector: None,
                 chunk_index: i as u32,
@@ -227,7 +245,7 @@ impl EarningsRepository {
                 embedding: None,
                 word_count: t.text.split_whitespace().count() as u32,
                 token_count: None,
-                model_version: ctx.stt_model.to_string(),
+                model_version: ctx.stt_model.clone(),
                 created_at: ctx.now,
             })
             .collect();
@@ -261,7 +279,7 @@ impl EarningsRepository {
         Ok(doc)
     }
 
-    /// Retrieve all chunks for a call, ordered by position.
+    /// Retrieve all chunks for a call, ordered by chunk position.
     pub async fn get_chunks(
         &self,
         call_id: ObjectId,
@@ -278,6 +296,7 @@ impl EarningsRepository {
         Ok(chunks)
     }
 
+    /// Update chunk embeddings and record the embedding model version used.
     pub async fn update_embeddings(
         &self,
         updates: Vec<(ObjectId, Vec<f32>)>,
@@ -310,7 +329,8 @@ impl EarningsRepository {
         Ok(modified)
     }
 
-    /// Find all chunk IDs that need (re-)embedding for a given model version.
+    /// Find all chunk IDs that need to be embedded or re-embedded for the
+    /// given model version.
     pub async fn find_chunks_needing_embedding(
         &self,
         current_model: &str,
@@ -333,7 +353,7 @@ impl EarningsRepository {
         Ok(docs.into_iter().map(|d| d.id).collect())
     }
 
-    /// Delete a call and all its associated chunks.
+    /// Delete a call and all of its associated chunks.
     pub async fn delete_call(&self, call_id: ObjectId) -> Result<(), DbError> {
         self.chunks.delete_many(doc! { "call_id": call_id }).await?;
         self.calls.delete_one(doc! { "_id": call_id }).await?;
@@ -342,22 +362,21 @@ impl EarningsRepository {
 }
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
-
-struct StoreTransactionContext<'a> {
-    ticker: &'a str,
+struct StoreTransactionContext {
+    ticker: String,
     year: u16,
-    quarter: &'a str,
-    stt_model: &'a str,
+    quarter: String,
+    stt_model: String,
     now: DateTime,
 }
 
-impl<'a> StoreTransactionContext<'a> {
-    fn from_doc(doc: &'a EarningsCallDocument, now: DateTime) -> Self {
+impl StoreTransactionContext {
+    fn from_doc(doc: &EarningsCallDocument, now: DateTime) -> Self {
         Self {
-            ticker: &doc.ticker,
+            ticker: doc.ticker.clone(),
             year: doc.year,
-            quarter: &doc.quarter,
-            stt_model: &doc.model_versions.stt,
+            quarter: doc.quarter.clone(),
+            stt_model: doc.model_versions.stt.clone(),
             now,
         }
     }
@@ -521,14 +540,4 @@ fn truncate(text: &str, max_chars: usize) -> String {
         Some(pos) => format!("{}…", &text[..pos]),
         None => format!("{}…", &text[..end]),
     }
-}
-
-/// Check if a MongoDB error is a duplicate key error (code 11000).
-fn is_duplicate_key(err: &mongodb::error::Error) -> bool {
-    if let mongodb::error::ErrorKind::Write(mongodb::error::WriteFailure::WriteError(ref we)) =
-        *err.kind
-    {
-        return we.code == 11000;
-    }
-    false
 }
