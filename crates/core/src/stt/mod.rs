@@ -37,7 +37,7 @@ pub struct TranscribeOptions {
 pub type TranscriptStream = Pin<Box<dyn Stream<Item = Result<TranscriptChunk, SttError>> + Send>>;
 
 #[async_trait]
-pub trait SpeechToText: Send + Sync {
+pub trait Stt: Send + Sync {
     async fn transcribe(
         &self,
         audio_path: &str,

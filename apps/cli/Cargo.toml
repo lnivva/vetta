@@ -17,5 +17,6 @@ colored.workspace = true
 clap.workspace = true
 tokio.workspace = true
 dotenvy.workspace = true
+serde_json.workspace = true
 textwrap.workspace = true
 terminal_size.workspace = true

@@ -1,16 +1,8 @@
 use colored::*;
-use miette::{Context, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result};
 use std::io::{self, Write};
-use std::path::Path;
 use vetta_core::domain::Transcript;
 
-pub fn write_file(path: &Path, content: &str) -> Result<()> {
-    std::fs::write(path, content.as_bytes())
-        .into_diagnostic()
-        .wrap_err_with(|| format!("Failed to write to {}", path.display()))
-}
-
-/// Pretty-print a transcript to stdout with colors, timestamps, and speaker labels.
 pub fn print_transcript(transcript: &Transcript) -> Result<()> {
     let mut stdout = io::stdout();
     let term_width = terminal_width().saturating_sub(6);
@@ -19,17 +11,19 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
 
     let separator = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
 
-    // Header
     writeln!(stdout).into_diagnostic()?;
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
-    writeln!(stdout, "   {}", "TRANSCRIPT".bold()).into_diagnostic()?;
+    writeln!(stdout, "   {}", "📄 TRANSCRIPT".bold().bright_white()).into_diagnostic()?;
+
     writeln!(
         stdout,
-        "   {} segments · {} speakers",
+        "   {} segments  •  {} speakers  •  {} duration",
         transcript.segments.len().to_string().cyan(),
         transcript.unique_speakers().len().to_string().cyan(),
+        format_timestamp(transcript.duration()).cyan(),
     )
     .into_diagnostic()?;
+
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
     writeln!(stdout).into_diagnostic()?;
 
@@ -38,13 +32,14 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         Color::Green,
         Color::Magenta,
         Color::Cyan,
-        Color::Red,
         Color::Blue,
+        Color::Red,
         Color::BrightYellow,
         Color::BrightGreen,
     ];
 
     let speakers = transcript.unique_speakers();
+
     let color_for = |speaker: &str| -> Color {
         speakers
             .iter()
@@ -53,7 +48,6 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
             .unwrap_or(Color::White)
     };
 
-    // Use as_dialogue() to group consecutive segments by speaker
     let turns = transcript.as_dialogue();
 
     for (i, turn) in turns.iter().enumerate() {
@@ -66,41 +60,40 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         } else {
             &turn.speaker
         };
+
         let color = color_for(speaker);
         let timestamp = format_timestamp(turn.start_time);
 
         writeln!(
             stdout,
-            "   {} {}",
+            "   {}  {}",
             speaker.color(color).bold(),
-            format!("[{timestamp}]").dimmed(),
+            format!("● [{}]", timestamp).dimmed(),
         )
         .into_diagnostic()?;
 
-        // Word-wrap the text and print with gutter
         let wrapped = textwrap::fill(turn.text.trim(), text_width);
+
         for line in wrapped.lines() {
             writeln!(stdout, "{}{}", text_indent.dimmed(), line).into_diagnostic()?;
         }
     }
 
-    // Footer
     writeln!(stdout).into_diagnostic()?;
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
     writeln!(
         stdout,
         "   {} {}",
-        "Duration:".dimmed(),
-        format_timestamp(transcript.duration()),
+        "Total Duration:".dimmed(),
+        format_timestamp(transcript.duration()).bold()
     )
     .into_diagnostic()?;
     writeln!(stdout).into_diagnostic()?;
-    stdout.flush().into_diagnostic()?;
 
+    stdout.flush().into_diagnostic()?;
     Ok(())
 }
 
-/// Format seconds into HH:MM:SS or MM:SS.
 fn format_timestamp(seconds: f32) -> String {
     let total = seconds.round() as u64;
     let h = total / 3600;
@@ -114,7 +107,6 @@ fn format_timestamp(seconds: f32) -> String {
     }
 }
 
-/// Best-effort terminal width detection, fallback to 100.
 fn terminal_width() -> usize {
     terminal_size::terminal_size()
         .map(|(w, _)| w.0 as usize)

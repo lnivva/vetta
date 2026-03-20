@@ -1,7 +1,7 @@
-use super::{SpeechToText, SttError, TranscribeOptions, TranscriptChunk, TranscriptStream, Word};
+use super::{Stt, SttError, TranscribeOptions, TranscriptChunk, TranscriptStream, Word};
 use async_trait::async_trait;
 use hyper_util::rt::TokioIo;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tokio::net::UnixStream;
 use tokio_stream::StreamExt;
 use tonic::Status;
@@ -18,18 +18,20 @@ use proto::{
 };
 
 pub struct LocalSttStrategy {
-    socket_path: String,
+    socket_path: PathBuf,
 }
 
 impl LocalSttStrategy {
-    pub async fn connect(socket_path: impl Into<String>) -> Result<Self, SttError> {
-        let path = socket_path.into();
+    pub async fn connect(socket: impl AsRef<Path>) -> Result<Self, SttError> {
+        let path = socket.as_ref();
 
-        if !Path::new(&path).exists() {
-            return Err(SttError::SocketNotFound(path));
+        if !path.exists() {
+            return Err(SttError::SocketNotFound(path.to_string_lossy().to_string()));
         }
 
-        Ok(Self { socket_path: path })
+        Ok(Self {
+            socket_path: path.to_path_buf(),
+        })
     }
 
     async fn client(&self) -> Result<SpeechToTextClient<tonic::transport::Channel>, SttError> {
@@ -38,10 +40,7 @@ impl LocalSttStrategy {
         let channel = Endpoint::try_from("http://localhost")?
             .connect_with_connector(service_fn(move |_: Uri| {
                 let path = path.clone();
-                async move {
-                    // TokioIo bridges tokio's AsyncRead/AsyncWrite to hyper's traits
-                    UnixStream::connect(&path).await.map(TokioIo::new)
-                }
+                async move { UnixStream::connect(&path).await.map(TokioIo::new) }
             }))
             .await?;
 
@@ -50,7 +49,7 @@ impl LocalSttStrategy {
 }
 
 #[async_trait]
-impl SpeechToText for LocalSttStrategy {
+impl Stt for LocalSttStrategy {
     async fn transcribe(
         &self,
         audio_path: &str,

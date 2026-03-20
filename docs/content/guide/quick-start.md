@@ -56,7 +56,7 @@ colima start
 Start the local deployment:
 
 ```bash  
-atlas local setup vetta-local --type local --port 27017 --bindIpAll --skipMongosh
+atlas local setup vetta-local --port 27017 --bindIpAll
 ```  
 
 On first run the CLI pulls the required container images. Once ready you'll see:

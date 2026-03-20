@@ -1,13 +1,16 @@
-use crate::output;
 use clap::{Subcommand, ValueEnum};
-use colored::*;
 use miette::{IntoDiagnostic, Result};
-use std::io;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+
+use crate::{
+    context::{AppContext, OutputMode},
+    infra::factory,
+    output,
+    reporter::PipelineReporter,
+};
+
 use vetta_core::domain::Quarter as CoreQuarter;
-use vetta_core::earnings_processor::{EarningsProcessor, PipelineEvent, ProcessRequest};
-use vetta_core::stt::local::LocalSttStrategy;
+use vetta_core::earnings_processor::{EarningsProcessor, ProcessRequest};
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum CliQuarter {
@@ -18,8 +21,8 @@ pub enum CliQuarter {
 }
 
 impl From<CliQuarter> for CoreQuarter {
-    fn from(cli: CliQuarter) -> Self {
-        match cli {
+    fn from(q: CliQuarter) -> Self {
+        match q {
             CliQuarter::Q1 => CoreQuarter::Q1,
             CliQuarter::Q2 => CoreQuarter::Q2,
             CliQuarter::Q3 => CoreQuarter::Q3,
@@ -30,12 +33,11 @@ impl From<CliQuarter> for CoreQuarter {
 
 #[derive(Subcommand)]
 pub enum EarningsAction {
-    /// Process an audio/video file through the analysis pipeline
     Process {
-        #[arg(short, long, value_name = "FILE")]
+        #[arg(short, long)]
         file: PathBuf,
 
-        #[arg(short, long, value_name = "TICKER")]
+        #[arg(short, long)]
         ticker: String,
 
         #[arg(short, long)]
@@ -44,17 +46,15 @@ pub enum EarningsAction {
         #[arg(short, long, value_enum)]
         quarter: CliQuarter,
 
-        /// Dump raw transcript to a file
-        #[arg(long, value_name = "PATH", conflicts_with = "print")]
+        #[arg(long)]
         out: Option<PathBuf>,
 
-        /// Stream transcript to stdout
         #[arg(long)]
         print: bool,
     },
 }
 
-pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Result<()> {
+pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
     let EarningsAction::Process {
         file,
         ticker,
@@ -64,115 +64,36 @@ pub async fn handle(action: EarningsAction, socket: &Path, quiet: bool) -> Resul
         print,
     } = action;
 
-    let file_path = std::fs::canonicalize(&file).into_diagnostic()?;
+    let file = std::fs::canonicalize(&file).into_diagnostic()?;
 
-    let stt = LocalSttStrategy::connect(socket.to_string_lossy())
-        .await
-        .into_diagnostic()?;
+    let stt = factory::build_stt(ctx).await?;
+    let processor = EarningsProcessor::from_env(stt).await.into_diagnostic()?;
 
-    if !quiet {
-        print_banner(&ticker, &quarter.clone().into(), year, &file_path, socket);
-    }
+    let output_mode = match (print, out.is_some()) {
+        (true, true) => OutputMode::Both,
+        (true, false) => OutputMode::Pretty,
+        (false, true) => OutputMode::Json,
+        (false, false) => OutputMode::Pretty,
+    };
 
-    let processor = EarningsProcessor::from_env(Box::new(stt))
-        .await
-        .into_diagnostic()?;
+    let reporter = PipelineReporter::new(ctx, matches!(output_mode, OutputMode::Pretty));
 
     let transcript = processor
         .process(
             ProcessRequest {
-                file_path: file_path.to_string_lossy().into(),
+                file_path: file.to_string_lossy().into(),
                 ticker,
                 year,
                 quarter: quarter.into(),
                 language: Some("en".into()),
-                initial_prompt: Some(
-                    "Earnings call transcript. Financial terminology, company names, analyst \
-                    questions and management responses.".into(),
-                ),
+                initial_prompt: Some("Earnings call transcript".into()),
             },
-            |event| match event {
-                PipelineEvent::ValidationPassed { format_info } => {
-                    if !quiet {
-                        println!("   {}", "✔ VALIDATION PASSED".green().bold());
-                        println!("   {:<10} {}", "Format:".dimmed(), format_info);
-                        println!();
-                        println!("   {}", "Processing Pipeline:".bold().blue());
-                        println!("   1. [✔] Validation");
-                        println!("   2. [{}] Transcription (Whisper)", "RUNNING".yellow());
-                    }
-                }
-                PipelineEvent::TranscriptionProgress { segments } => {
-                    if !quiet {
-                        print!("\r\x1B[K   Transcribing… {segments} segments");
-                        let _ = io::stdout().flush();
-                    }
-                }
-                PipelineEvent::TranscriptionComplete { ref transcript } => {
-                    if !quiet {
-                        let seg_count = transcript.segments.len();
-                        let speaker_count = transcript.unique_speakers().len();
-                        println!(
-                            "\r\x1B[K   2. [✔] Transcription ({seg_count} segments, {speaker_count} speakers)"
-                        );
-                    }
-                }
-                PipelineEvent::StoringChunks { chunk_count } => {
-                    if !quiet {
-                        print!("   3. [{}] Storing {chunk_count} chunks…", "RUNNING".yellow());
-                        let _ = io::stdout().flush();
-                    }
-                }
-                PipelineEvent::Stored { ref call_id, chunk_count } => {
-                    if !quiet {
-                        println!(
-                            "\r\x1B[K   3. [✔] Stored ({chunk_count} chunks → {call_id})"
-                        );
-                    }
-                }
-            },
+            |event| reporter.handle(&event),
         )
         .await
         .into_diagnostic()?;
 
-    // Format output as dialogue with speaker labels
-    let output_text = transcript.to_string();
-
-    if let Some(ref path) = out {
-        output::write_file(path, &output_text)?;
-    }
-
-    if print {
-        output::print_transcript(&transcript)?;
-    }
-
-    if !quiet {
-        println!();
-        println!("   {}", "✔ PIPELINE COMPLETE".green().bold());
-        println!();
-    }
+    output::emit(ctx, &transcript, out.as_deref(), output_mode)?;
 
     Ok(())
-}
-
-fn print_banner(
-    ticker: &str,
-    quarter: &CoreQuarter,
-    year: u16,
-    file_path: &Path,
-    socket_path: &Path,
-) {
-    println!();
-    println!("   {}", "VETTA FINANCIAL ENGINE".bold());
-    println!("   {}", "======================".dimmed());
-    println!(
-        "   {:<10} {} {} {}",
-        "TARGET:".dimmed(),
-        ticker.yellow().bold(),
-        quarter.to_string().yellow(),
-        year.to_string().yellow()
-    );
-    println!("   {:<10} {}", "INPUT:".dimmed(), file_path.display());
-    println!("   {:<10} {}", "SOCKET:".dimmed(), socket_path.display());
-    println!();
 }
