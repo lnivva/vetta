@@ -3,7 +3,7 @@ use crate::db::models::{
     ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
 };
 use crate::db::{Db, DbError};
-use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
+use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
 use serde::Deserialize;
@@ -60,6 +60,7 @@ pub struct SegmentInput {
     /// ASR-assigned speaker identifier.
     pub speaker_id: String,
 }
+
 impl EarningsRepository {
     /// Create a new repository instance backed by the given database handle.
     pub fn new(db: &Db) -> Self {
@@ -72,7 +73,6 @@ impl EarningsRepository {
 
     /// Ensure all collection indexes required by the repository are present.
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
-        // --- earnings_calls indexes ---
         self.calls
             .create_index(
                 IndexModel::builder()
@@ -102,7 +102,6 @@ impl EarningsRepository {
             )
             .await?;
 
-        // --- earnings_chunks indexes ---
         self.chunks
             .create_index(
                 IndexModel::builder()
@@ -133,7 +132,6 @@ impl EarningsRepository {
     /// Store a new call and all derived dialogue chunks in a single transaction.
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
-
         let (call_doc, turns) = build_call_and_turns(req, now);
 
         let mut session = self.client.start_session().await?;
@@ -161,7 +159,6 @@ impl EarningsRepository {
     /// old chunks before inserting the new transcript and chunk set.
     pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
-
         let (call_doc, turns) = build_call_and_turns(req, now);
 
         let mut session = self.client.start_session().await?;
@@ -197,7 +194,6 @@ impl EarningsRepository {
             .await?;
 
         session.commit_transaction().await?;
-
         Ok(call_id)
     }
 
@@ -208,6 +204,11 @@ impl EarningsRepository {
         call_doc: EarningsCallDocument,
         turns: &[DialogueTurn],
     ) -> Result<ObjectId, DbError> {
+        debug_assert!(
+            matches!(call_doc.status, CallStatus::Chunked),
+            "store() must persist fully chunked calls"
+        );
+
         let call_result = self
             .calls
             .insert_one(call_doc)
@@ -361,7 +362,6 @@ impl EarningsRepository {
     }
 }
 
-// ─── Internal helpers ────────────────────────────────────────────────────────
 struct StoreTransactionContext {
     ticker: String,
     year: u16,
@@ -445,7 +445,7 @@ fn build_call_and_turns(
         },
         status: CallStatus::Chunked,
         model_versions: ModelVersions {
-            stt: req.stt_model.clone(),
+            stt: req.stt_model,
             embedding: None,
             embedding_dimensions: None,
         },
