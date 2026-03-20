@@ -51,6 +51,9 @@ pub enum EarningsAction {
 
         #[arg(long)]
         print: bool,
+
+        #[arg(long, default_value = "false")]
+        replace: bool,
     },
 }
 
@@ -62,6 +65,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         quarter,
         out,
         print,
+        replace
     } = action;
 
     let file = std::fs::canonicalize(&file).into_diagnostic()?;
@@ -87,6 +91,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
                 quarter: quarter.into(),
                 language: Some("en".into()),
                 initial_prompt: Some("Earnings call transcript".into()),
+                replace,
             },
             |event| reporter.handle(&event),
         )

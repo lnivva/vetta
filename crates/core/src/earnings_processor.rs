@@ -117,6 +117,7 @@ pub struct ProcessRequest {
     pub quarter: Quarter,
     pub language: Option<String>,
     pub initial_prompt: Option<String>,
+    pub replace: bool,
 }
 
 // ── Validation ───────────────────────────────────────────────
@@ -188,11 +189,31 @@ impl EarningsProcessor {
         request: ProcessRequest,
         mut on_event: impl FnMut(PipelineEvent),
     ) -> Result<Transcript, PipelineError> {
+        let repo = EarningsRepository::new(&self.db);
+
         // ── Stage 1: Validation ──────────────────────────────
         let format_info = validate_media_file(&request.file_path)?;
         on_event(PipelineEvent::ValidationPassed {
             format_info: format_info.clone(),
         });
+
+        // ── Check create_replace flag
+        let existing = repo
+            .find_call(
+                &request.ticker,
+                request.year,
+                &request.quarter.to_string(),
+            )
+            .await?;
+
+        if let Some(_) = existing {
+            if !request.replace {
+                return Err(PipelineError::Duplicate(format!(
+                    "{} {} {}",
+                    request.ticker, request.year, request.quarter
+                )));
+            }
+        }
 
         // ── Stage 2: Transcription ───────────────────────────
         let options = TranscribeOptions {
@@ -232,9 +253,6 @@ impl EarningsProcessor {
         });
 
         // ── Stage 3: Store in MongoDB ────────────────────────
-        let repo = EarningsRepository::new(&self.db);
-
-        // Extract file name from path
         let file_name = Path::new(&request.file_path)
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
