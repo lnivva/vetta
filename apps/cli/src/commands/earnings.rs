@@ -65,7 +65,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         quarter,
         out,
         print,
-        replace
+        replace,
     } = action;
 
     let file = std::fs::canonicalize(&file).into_diagnostic()?;

@@ -198,22 +198,7 @@ impl EarningsProcessor {
         });
 
         // ── Check create_replace flag
-        let existing = repo
-            .find_call(
-                &request.ticker,
-                request.year,
-                &request.quarter.to_string(),
-            )
-            .await?;
-
-        if let Some(_) = existing {
-            if !request.replace {
-                return Err(PipelineError::Duplicate(format!(
-                    "{} {} {}",
-                    request.ticker, request.year, request.quarter
-                )));
-            }
-        }
+        Self::ensure_not_duplicate(&request, &repo).await?;
 
         // ── Stage 2: Transcription ───────────────────────────
         let options = TranscribeOptions {
@@ -293,6 +278,26 @@ impl EarningsProcessor {
         });
 
         Ok(transcript)
+    }
+
+    async fn ensure_not_duplicate(
+        request: &ProcessRequest,
+        repo: &EarningsRepository,
+    ) -> Result<(), PipelineError> {
+        let quarter = request.quarter.to_string();
+
+        let existing = repo
+            .find_call(&request.ticker, request.year, &quarter)
+            .await?;
+
+        if existing.is_some() && !request.replace {
+            return Err(PipelineError::Duplicate(format!(
+                "{} {} {}",
+                request.ticker, request.year, request.quarter
+            )));
+        }
+
+        Ok(())
     }
 }
 
