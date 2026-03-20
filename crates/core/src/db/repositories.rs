@@ -3,7 +3,7 @@ use crate::db::models::{
     ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
 };
 use crate::db::{Db, DbError};
-use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
+use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
 use serde::Deserialize;
@@ -45,24 +45,15 @@ pub struct SegmentInput {
     pub speaker_id: String,
 }
 
-struct StoreTransactionContext<'a> {
-    ticker: &'a str,
-    year: u16,
-    quarter: &'a str,
-    stt_model: &'a str,
-    now: DateTime,
-}
-
 impl EarningsRepository {
     pub fn new(db: &Db) -> Self {
         Self {
             client: db.client().clone(),
-            calls: db.collection::<EarningsCallDocument>(CALLS_COLLECTION),
-            chunks: db.collection::<EarningsChunkDocument>(CHUNKS_COLLECTION),
+            calls: db.collection(CALLS_COLLECTION),
+            chunks: db.collection(CHUNKS_COLLECTION),
         }
     }
 
-    /// Create required indexes. Idempotent.
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
         // --- earnings_calls indexes ---
         self.calls
@@ -122,98 +113,15 @@ impl EarningsRepository {
         Ok(())
     }
 
-    /// Store a fully transcribed earnings call and generate its search chunks.
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
 
-        // Build dialogue turns from raw segments
-        let turns = build_dialogue_turns(&req.segments);
-        let unique_speakers = unique_speaker_ids(&req.segments);
-        let word_count: u32 = req
-            .segments
-            .iter()
-            .map(|s| s.text.split_whitespace().count() as u32)
-            .sum();
+        let (call_doc, turns) = build_call_and_turns(req, now);
 
-        // Capture fields needed after call_doc consumes parts of `req`.
-        let ticker = req.ticker.clone();
-        let year = req.year;
-        let quarter = req.quarter.clone();
-        let stt_model = req.stt_model.clone();
-        let segment_count = req.segments.len() as u32;
+        let mut session = self.client.start_session().await?;
+        session.start_transaction().await?;
 
-        // --- Build the call document ---
-        let call_doc = EarningsCallDocument {
-            id: None,
-            ticker: ticker.clone(),
-            year,
-            quarter: quarter.clone(),
-            company: None,
-            call_date: None,
-            source: SourceMetadata {
-                file_name: req.file_name,
-                file_hash: req.file_hash,
-                format: req.format,
-                duration_seconds: req.duration_seconds,
-                ingested_at: now,
-            },
-            stats: TranscriptStats {
-                segment_count,
-                turn_count: turns.len() as u32,
-                speaker_count: unique_speakers.len() as u32,
-                word_count,
-                chunk_count: turns.len() as u32,
-            },
-            speakers: unique_speakers
-                .iter()
-                .map(|sid| SpeakerInfo {
-                    speaker_id: sid.clone(),
-                    role: Default::default(),
-                    name: None,
-                    title: None,
-                    firm: None,
-                })
-                .collect(),
-            transcript: TranscriptData {
-                segments: req
-                    .segments
-                    .into_iter()
-                    .map(|s| SegmentData {
-                        start_time: s.start_time,
-                        end_time: s.end_time,
-                        text: s.text,
-                        speaker_id: s.speaker_id,
-                    })
-                    .collect(),
-            },
-            status: CallStatus::Transcribed,
-            model_versions: ModelVersions {
-                stt: stt_model.clone(),
-                embedding: None,
-                embedding_dimensions: None,
-            },
-            updated_at: now,
-        };
-
-        // --- Start a session and transaction ---
-        let mut session = self
-            .client
-            .start_session()
-            .await
-            .map_err(|e| DbError::Connection(format!("Failed to start session: {e}")))?;
-
-        session
-            .start_transaction()
-            .await
-            .map_err(|e| DbError::QueryFailure(format!("Failed to start transaction: {e}")))?;
-
-        let ctx = StoreTransactionContext {
-            ticker: &ticker,
-            year,
-            quarter: &quarter,
-            stt_model: &stt_model,
-            now,
-        };
+        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
         let result = self
             .store_in_transaction(&mut session, &ctx, call_doc, &turns)
@@ -221,9 +129,7 @@ impl EarningsRepository {
 
         match result {
             Ok(call_id) => {
-                session.commit_transaction().await.map_err(|e| {
-                    DbError::QueryFailure(format!("Failed to commit transaction: {e}"))
-                })?;
+                session.commit_transaction().await?;
                 Ok(call_id)
             }
             Err(e) => {
@@ -231,6 +137,50 @@ impl EarningsRepository {
                 Err(e)
             }
         }
+    }
+    pub async fn replace(
+        &self,
+        req: StoreEarningsRequest,
+    ) -> Result<ObjectId, DbError> {
+        let now = DateTime::now();
+
+        let (call_doc, turns) = build_call_and_turns(req, now);
+
+        let mut session = self.client.start_session().await?;
+        session.start_transaction().await?;
+
+        if let Some(existing) = self
+            .calls
+            .find_one(doc! {
+                "ticker": &call_doc.ticker,
+                "year": call_doc.year as i32,
+                "quarter": &call_doc.quarter,
+            })
+            .session(&mut session)
+            .await?
+        {
+            let call_id = existing.id.expect("existing must have id");
+
+            self.chunks
+                .delete_many(doc! { "call_id": call_id })
+                .session(&mut session)
+                .await?;
+
+            self.calls
+                .delete_one(doc! { "_id": call_id })
+                .session(&mut session)
+                .await?;
+        }
+
+        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
+
+        let call_id = self
+            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
+            .await?;
+
+        session.commit_transaction().await?;
+
+        Ok(call_id)
     }
 
     async fn store_in_transaction(
@@ -240,94 +190,54 @@ impl EarningsRepository {
         call_doc: EarningsCallDocument,
         turns: &[DialogueTurn],
     ) -> Result<ObjectId, DbError> {
-        // Insert call document
         let call_result = self
             .calls
             .insert_one(call_doc)
             .session(&mut *session)
-            .await
-            .map_err(|e| {
-                if is_duplicate_key(&e) {
-                    DbError::Duplicate(format!("{} {} {}", ctx.ticker, ctx.quarter, ctx.year))
-                } else {
-                    DbError::from(e)
-                }
-            })?;
+            .await?;
 
         let call_id = call_result
             .inserted_id
             .as_object_id()
-            .ok_or_else(|| DbError::Serialization("Expected ObjectId from insert".into()))?;
+            .ok_or_else(|| DbError::Serialization("Expected ObjectId".into()))?;
 
-        // --- Build chunk documents ---
         let chunk_docs: Vec<EarningsChunkDocument> = turns
             .iter()
             .enumerate()
-            .map(|(i, turn)| {
-                let context = build_context(turns, i);
-                let wc = turn.text.split_whitespace().count() as u32;
-
-                EarningsChunkDocument {
-                    id: None,
-                    call_id,
-                    ticker: ctx.ticker.to_string(),
-                    year: ctx.year,
-                    quarter: ctx.quarter.to_string(),
-                    call_date: None,
-                    sector: None,
-                    chunk_index: i as u32,
-                    chunk_type: ChunkType::Unknown,
-                    speaker: ChunkSpeaker {
-                        speaker_id: turn.speaker_id.clone(),
-                        name: None,
-                        role: None,
-                        title: None,
-                    },
-                    start_time: turn.start_time,
-                    end_time: turn.end_time,
-                    text: turn.text.clone(),
-                    context: Some(context),
-                    embedding: None,
-                    word_count: wc,
-                    token_count: None,
-                    model_version: ctx.stt_model.to_string(),
-                    created_at: ctx.now,
-                }
+            .map(|(i, t)| EarningsChunkDocument {
+                id: None,
+                call_id,
+                ticker: ctx.ticker.to_string(),
+                year: ctx.year,
+                quarter: ctx.quarter.to_string(),
+                call_date: None,
+                sector: None,
+                chunk_index: i as u32,
+                chunk_type: ChunkType::Unknown,
+                speaker: ChunkSpeaker {
+                    speaker_id: t.speaker_id.clone(),
+                    name: None,
+                    role: None,
+                    title: None,
+                },
+                start_time: t.start_time,
+                end_time: t.end_time,
+                text: t.text.clone(),
+                context: Some(build_context(turns, i)),
+                embedding: None,
+                word_count: t.text.split_whitespace().count() as u32,
+                token_count: None,
+                model_version: ctx.stt_model.to_string(),
+                created_at: ctx.now,
             })
             .collect();
 
-        // Bulk insert chunks
         if !chunk_docs.is_empty() {
-            let chunk_count = chunk_docs.len();
-            let result = self
-                .chunks
+            self.chunks
                 .insert_many(chunk_docs)
-                .ordered(false)
                 .session(&mut *session)
-                .await
-                .map_err(DbError::from)?;
-
-            if result.inserted_ids.len() != chunk_count {
-                return Err(DbError::BulkWrite {
-                    success: result.inserted_ids.len() as u64,
-                    failure: (chunk_count - result.inserted_ids.len()) as u64,
-                });
-            }
+                .await?;
         }
-
-        // Update status to chunked
-        self.calls
-            .update_one(
-                doc! { "_id": call_id },
-                doc! {
-                    "$set": {
-                        "status": "chunked",
-                        "updated_at": DateTime::now(),
-                    }
-                },
-            )
-            .session(&mut *session)
-            .await?;
 
         Ok(call_id)
     }
@@ -433,11 +343,97 @@ impl EarningsRepository {
 
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
+struct StoreTransactionContext<'a> {
+    ticker: &'a str,
+    year: u16,
+    quarter: &'a str,
+    stt_model: &'a str,
+    now: DateTime,
+}
+
+impl<'a> StoreTransactionContext<'a> {
+    fn from_doc(doc: &'a EarningsCallDocument, now: DateTime) -> Self {
+        Self {
+            ticker: &doc.ticker,
+            year: doc.year,
+            quarter: &doc.quarter,
+            stt_model: &doc.model_versions.stt,
+            now,
+        }
+    }
+}
+
 struct DialogueTurn {
     speaker_id: String,
     start_time: f32,
     end_time: f32,
     text: String,
+}
+
+fn build_call_and_turns(
+    req: StoreEarningsRequest,
+    now: DateTime,
+) -> (EarningsCallDocument, Vec<DialogueTurn>) {
+    let turns = build_dialogue_turns(&req.segments);
+    let speakers = unique_speaker_ids(&req.segments);
+
+    let call_doc = EarningsCallDocument {
+        id: None,
+        ticker: req.ticker,
+        year: req.year,
+        quarter: req.quarter,
+        company: None,
+        call_date: None,
+        source: SourceMetadata {
+            file_name: req.file_name,
+            file_hash: req.file_hash,
+            format: req.format,
+            duration_seconds: req.duration_seconds,
+            ingested_at: now,
+        },
+        stats: TranscriptStats {
+            segment_count: req.segments.len() as u32,
+            turn_count: turns.len() as u32,
+            speaker_count: speakers.len() as u32,
+            word_count: req
+                .segments
+                .iter()
+                .map(|s| s.text.split_whitespace().count() as u32)
+                .sum(),
+            chunk_count: turns.len() as u32,
+        },
+        speakers: speakers
+            .into_iter()
+            .map(|s| SpeakerInfo {
+                speaker_id: s,
+                role: Default::default(),
+                name: None,
+                title: None,
+                firm: None,
+            })
+            .collect(),
+        transcript: TranscriptData {
+            segments: req
+                .segments
+                .into_iter()
+                .map(|s| SegmentData {
+                    start_time: s.start_time,
+                    end_time: s.end_time,
+                    text: s.text,
+                    speaker_id: s.speaker_id,
+                })
+                .collect(),
+        },
+        status: CallStatus::Transcribed,
+        model_versions: ModelVersions {
+            stt: "whisper-large-v3".into(),
+            embedding: None,
+            embedding_dimensions: None,
+        },
+        updated_at: now,
+    };
+
+    (call_doc, turns)
 }
 
 /// Merge consecutive segments from the same speaker into dialogue turns.
