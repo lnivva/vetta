@@ -23,9 +23,6 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub quiet: bool,
 
-    #[arg(long, global = true)]
-    pub json: bool,
-
     #[command(subcommand)]
     pub command: Command,
 }

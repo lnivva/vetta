@@ -6,8 +6,8 @@ mod output;
 mod reporter;
 
 use clap::Parser;
-use context::{AppContext, OutputMode};
-use miette::{Result, set_panic_hook};
+use context::AppContext;
+use miette::{set_panic_hook, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -19,11 +19,6 @@ async fn main() -> Result<()> {
     let ctx = AppContext {
         socket: cli.socket,
         quiet: cli.quiet,
-        output: if cli.json {
-            OutputMode::Json
-        } else {
-            OutputMode::Pretty
-        },
     };
 
     commands::dispatch(cli.command, &ctx).await

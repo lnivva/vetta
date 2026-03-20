@@ -4,11 +4,11 @@ use std::path::PathBuf;
 pub struct AppContext {
     pub socket: PathBuf,
     pub quiet: bool,
-    pub output: OutputMode,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum OutputMode {
     Pretty,
     Json,
+    Both,
 }

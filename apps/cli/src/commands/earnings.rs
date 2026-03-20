@@ -2,7 +2,12 @@ use clap::{Subcommand, ValueEnum};
 use miette::{IntoDiagnostic, Result};
 use std::path::PathBuf;
 
-use crate::{context::AppContext, infra::factory, output, reporter::PipelineReporter};
+use crate::{
+    context::{AppContext, OutputMode},
+    infra::factory,
+    output,
+    reporter::PipelineReporter,
+};
 
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::{EarningsProcessor, ProcessRequest};
@@ -64,7 +69,17 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
     let stt = factory::build_stt(ctx).await?;
     let processor = EarningsProcessor::from_env(stt).await.into_diagnostic()?;
 
-    let reporter = PipelineReporter::new(ctx);
+    let output_mode = match (print, out.is_some()) {
+        (true, true) => OutputMode::Both,
+        (true, false) => OutputMode::Pretty,
+        (false, true) => OutputMode::Json,
+        (false, false) => OutputMode::Pretty,
+    };
+
+    let reporter = PipelineReporter::new(
+        ctx,
+        matches!(output_mode, OutputMode::Pretty),
+    );
 
     let transcript = processor
         .process(
@@ -81,7 +96,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         .await
         .into_diagnostic()?;
 
-    output::emit(ctx, &transcript, out.as_deref(), print)?;
+    output::emit(ctx, &transcript, out.as_deref(), output_mode)?;
 
     Ok(())
 }

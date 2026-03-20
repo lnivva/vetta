@@ -1,20 +1,36 @@
+use miette::Result;
+use std::path::Path;
+use vetta_core::domain::Transcript;
+
+use crate::context::{AppContext, OutputMode};
+
 pub mod json;
 pub mod pretty;
 
-use crate::context::{AppContext, OutputMode};
-use miette::Result;
-use std::path::Path;
-
-use vetta_core::domain::Transcript;
-
 pub fn emit(
-    ctx: &AppContext,
+    _ctx: &AppContext,
     transcript: &Transcript,
     out: Option<&Path>,
-    print: bool,
+    mode: OutputMode,
 ) -> Result<()> {
-    match ctx.output {
-        OutputMode::Pretty => pretty::emit(transcript, out, print),
-        OutputMode::Json => json::emit(transcript),
+    match mode {
+        OutputMode::Pretty => {
+            pretty::print_transcript(transcript)?;
+        }
+
+        OutputMode::Json => {
+            if let Some(path) = out {
+                json::write_json(path, transcript)?;
+            }
+        }
+
+        OutputMode::Both => {
+            if let Some(path) = out {
+                json::write_json(path, transcript)?;
+            }
+            pretty::print_transcript(transcript)?;
+        }
     }
+
+    Ok(())
 }
