@@ -95,7 +95,54 @@ atlas local delete vetta-local
 
 :::
 
-## 2. Start the STT service
+## 3. Hugging Face Token Setup (Required)
+
+Vetta downloads models from the Hugging Face Hub. Some models, notably the PyAnnote speaker diarization pipeline, *
+*require authenticated access**.
+
+Without authentication, you may encounter:
+
+- Lower rate limits
+- Slower downloads
+- Failures when loading diarization models
+
+### Step 1: Create a Hugging Face access token
+
+1. Visit https://huggingface.co/settings/tokens
+2. Click **New token**
+3. Select **Read** access
+4. Copy the generated token
+
+### Step 2: Configure the token in `config.toml`
+
+Edit the diarization section of:
+
+```
+services/stt/local/config.toml
+```
+
+```toml
+[diarization]
+enabled = true
+hf_token = "hf_xxxxxxxxxxxxxxxxxxxxxxxxx"
+model = "pyannote/speaker-diarization-3.1"
+device = "cpu"
+min_speakers = 0
+max_speakers = 0
+```
+
+> **Important**
+>
+> - Do **not** commit your Hugging Face token to version control
+> - For production deployments, prefer injecting the token via environment variables or a secrets manager
+
+Once configured, authenticated downloads will no longer emit this warning:
+
+```text
+Warning: You are sending unauthenticated requests to the HF Hub
+```
+
+## 4. Start the STT service
 
 ```bash
 cd services/stt/local
@@ -110,7 +157,7 @@ You will see the ready line when it is accepting connections:
 [whisper] ready on /tmp/whisper.sock
 ```
 
-## 3. Generating a test audio file (macOS Only)
+## 5. Generating a test audio file (macOS Only)
 
 ::: tip Platform Support
 The `say` command below is macOS-specific. Linux/Windows users should instead pass their MP3 using the
@@ -137,7 +184,7 @@ ffmpeg -y -i /tmp/speaker1.aiff -i /tmp/speaker2.aiff -i /tmp/speaker3.aiff \
 -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]" -map "[out]" -ar 16000 -ac 1 /tmp/test.wav  
 ```
 
-## 4. Process test audio file
+## 6. Process test audio file
 
 ```bash
 cargo run -- earnings process --file /tmp/test.wav --ticker XXXX --year 2024 --quarter q3
