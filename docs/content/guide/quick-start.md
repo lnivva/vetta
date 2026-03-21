@@ -97,7 +97,7 @@ atlas local delete vetta-local
 
 ## 3. Hugging Face Token Setup (Required)
 
-Vetta downloads models from the Hugging Face Hub. Some models, notably the PyAnnote speaker diarization pipeline,  *
+Vetta downloads models from the Hugging Face Hub. Some models, notably the PyAnnote speaker diarization pipeline, *
 *require authenticated access**.
 
 Without authentication, you may encounter:

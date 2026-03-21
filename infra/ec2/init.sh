@@ -20,6 +20,11 @@ sed -i 's|http://.*.ec2.archive.ubuntu.com|http://archive.ubuntu.com|g' /etc/apt
 
 export DEBIAN_FRONTEND=noninteractive
 
+while fuser /var/lib/dpkg/lock >/dev/null 2>&1; do
+  echo "Waiting for apt lock..."
+  sleep 5
+done
+
 # Retry apt update (handles transient mirror issues)
 for i in {1..5}; do
   apt-get clean
@@ -48,30 +53,34 @@ apt-get install -y \
   protobuf-compiler
 
 # ---------------------------------------------------------------------
-# Rust (required by some deps)
+# Rust
 # ---------------------------------------------------------------------
-echo "===== INSTALL RUST ====="
+echo "===== INSTALL RUST (ubuntu user) ====="
 
+sudo -u ubuntu -H bash <<'EOF'
+set -e
 if ! command -v rustc >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 fi
+EOF
 
-# Make Rust available for ubuntu user
-if [ -f /home/ubuntu/.cargo/env ]; then
-  source /home/ubuntu/.cargo/env
-fi
+# Make Rust available system-wide
+cat << 'EOF' > /etc/profile.d/rust.sh
+export PATH="/home/ubuntu/.cargo/bin:$PATH"
+EOF
+chmod +x /etc/profile.d/rust.sh
 
 # ---------------------------------------------------------------------
-# uv (Python package manager)
+# uv
 # ---------------------------------------------------------------------
 echo "===== INSTALL UV ====="
 
+sudo -u ubuntu -H bash <<'EOF'
+set -e
 if ! command -v uv >/dev/null 2>&1; then
   curl -LsSf https://astral.sh/uv/install.sh | sh
 fi
-
-# Ensure PATH for ubuntu user
-export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.cargo/bin:$PATH"
+EOF
 
 # ---------------------------------------------------------------------
 # NVIDIA DRIVER
@@ -114,6 +123,8 @@ if lsblk | grep -q nvme1n1; then
     /mnt/nvme/uv \
     /mnt/nvme/pip \
     /mnt/nvme/tmp
+
+    chown -R ubuntu:ubuntu "$NVME_MOUNT"
 fi
 
 # ---------------------------------------------------------------------
@@ -129,7 +140,7 @@ export TORCH_HOME=/mnt/nvme/torch-cache
 export XDG_CACHE_HOME=/mnt/nvme
 export WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
 export UV_LINK_MODE=copy
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="/home/ubuntu/.local/bin:/home/ubuntu/.cargo/bin:$PATH"
 EOF
 
 chmod +x /etc/profile.d/vetta-env.sh
@@ -140,6 +151,6 @@ chmod +x /etc/profile.d/vetta-env.sh
 echo "===== BOOTSTRAP COMPLETE ====="
 echo "Logs available at /var/log/vetta-init.log"
 
-# Reboot is required for NVIDIA drivers
+# Reboot required for NVIDIA drivers
 echo "===== REBOOTING FOR NVIDIA DRIVER ====="
 reboot

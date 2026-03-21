@@ -56,13 +56,21 @@ resource "aws_instance" "vetta_ec2" {
   instance_type               = var.instance_type
   key_name                    = var.ec2_kp_name
   subnet_id                   = data.aws_subnet.vetta_public.id
-  user_data                   = file(local.init_script)
+  user_data_base64            = filebase64("${path.module}/../ec2/init.sh")
   user_data_replace_on_change = true
   vpc_security_group_ids      = var.security_group
+
   root_block_device {
     volume_size           = 60
     volume_type           = "gp3"
     delete_on_termination = true
+    encrypted             = true
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
   }
 
   tags = {
