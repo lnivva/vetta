@@ -37,6 +37,38 @@ export default defineConfig({
                         {text: "Quick Start", link: "/guide/quick-start"},
                     ],
                 },
+                {
+                    text: "Installation",
+                    items: [
+                        {text: "Prerequisites", link: "/guide/installation/prerequisites"},
+                        {text: "macOS", link: "/guide/installation/macos"},
+                        {text: "Linux (Ubuntu/Debian)", link: "/guide/installation/linux"},
+                        {text: "Cloud (EC2 / Terraform)", link: "/guide/installation/cloud"},
+                    ],
+                },
+                {
+                    text: "MongoDB Setup",
+                    items: [
+                        {text: "Overview", link: "/guide/mongodb/overview"},
+                        {text: "Local (Atlas CLI)", link: "/guide/mongodb/local-atlas-cli"},
+                        {text: "Atlas Cloud", link: "/guide/mongodb/atlas-cloud"},
+                        {text: "Self-Hosted / Existing", link: "/guide/mongodb/self-hosted"},
+                    ],
+                },
+                {
+                    text: "Services",
+                    items: [
+                        {text: "STT Service", link: "/guide/services/stt"},
+                        {text: "Hugging Face Authentication", link: "/guide/services/hugging-face-auth"},
+                    ],
+                },
+                {
+                    text: "First Run",
+                    items: [
+                        {text: "Generate Test Audio", link: "/guide/first-run/test-audio"},
+                        {text: "Process an Earnings Call", link: "/guide/first-run/process"},
+                    ],
+                },
             ],
             "/technical/": [
                 {
