@@ -31,7 +31,7 @@ Whisper inference.
 
 ## Terraform
 
-A reference Terraform module is provided in `deploy/terraform/`. The module assumes you have already created a **VPC**,
+A reference Terraform module is provided in `infra/terraform/`. The module assumes you have already created a **VPC**,
 **security group**, and **EC2 key pair** — it provisions the instance itself along with an IAM role and outputs the SSH
 command.
 
@@ -57,7 +57,7 @@ ffmpeg, so you can skip the manual Linux installation steps above.
 ### Deploy
 
 ```bash
-cd deploy/terraform
+cd infra/terraform
 terraform init
 terraform apply \
   -var='instance_type=g6.xlarge' \
@@ -68,7 +68,7 @@ terraform apply \
 Or create a `terraform.tfvars` file to avoid passing flags every time:
 
 ```hcl
-# deploy/terraform/terraform.tfvars
+# infra/terraform/terraform.tfvars
 
 instance_type = "g6.xlarge"
 security_group = ["sg-xxxxxxx"]
@@ -76,7 +76,7 @@ ec2_kp_name   = "vetta-dev"
 ```
 
 ```bash
-cd deploy/terraform
+cd infra/terraform
 terraform init
 terraform apply
 ```
