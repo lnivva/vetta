@@ -6,7 +6,7 @@ sudo apt update
 sudo apt upgrade -y
 
 echo "===== BASE PACKAGES ====="
-sudo apt install -y build-essential curl git ca-certificates pkg-config ffmpeg unzip htop jq
+sudo apt install -y build-essential curl git ca-certificates pkg-config ffmpeg unzip htop jq protobuf-compiler
 
 # ---------------------------------------------------------------------
 # Rust (required by some deps)
@@ -46,18 +46,26 @@ NVME_DEV="/dev/nvme1n1"
 NVME_MOUNT="/mnt/nvme"
 
 if lsblk | grep -q nvme1n1; then
-  sudo mkdir -p $NVME_MOUNT
+  sudo mkdir -p "$NVME_MOUNT"
 
   if ! mount | grep -q "$NVME_MOUNT"; then
     if ! sudo blkid "$NVME_DEV" >/dev/null 2>&1; then
-      sudo mkfs.ext4 "$NVME_DEV"
+      sudo mkfs.ext4 -F "$NVME_DEV"
     fi
-    sudo mount $NVME_DEV $NVME_MOUNT
+    sudo mount "$NVME_DEV" "$NVME_MOUNT"
   fi
 
-  sudo chown -R ubuntu:ubuntu $NVME_MOUNT
+  sudo chown -R ubuntu:ubuntu "$NVME_MOUNT"
+  sudo chmod 755 "$NVME_MOUNT"
 
-  mkdir -p /mnt/nvme/models /mnt/nvme/hf-cache /mnt/nvme/torch-cache
+  # Pre-create ALL cache directories
+  mkdir -p \
+    /mnt/nvme/models \
+    /mnt/nvme/hf-cache \
+    /mnt/nvme/torch-cache \
+    /mnt/nvme/uv \
+    /mnt/nvme/pip \
+    /mnt/nvme/tmp
 fi
 
 # ---------------------------------------------------------------------
