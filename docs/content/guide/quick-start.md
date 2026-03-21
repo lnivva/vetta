@@ -6,8 +6,8 @@ service, and run the pipeline.
 ## 1. Install dependencies
 
 > Follow the guide for your platform:  
-> **[macOS](/guide/installation/macos)** · **[Linux](/guide/installation/linux)**
-> · **[Cloud (EC2)](/guide/installation/cloud)**
+> **[macOS](/guide/installation/macos)** - **[Linux](/guide/installation/linux)**
+> - **[Cloud (EC2)](/guide/installation/cloud)**
 
 ## 2. Clone and build
 
