@@ -79,6 +79,8 @@ export TRANSFORMERS_CACHE=/mnt/nvme/hf-cache
 export TORCH_HOME=/mnt/nvme/torch-cache
 export XDG_CACHE_HOME=/mnt/nvme
 export PATH="$HOME/.local/bin:$PATH"
+export UV_LINK_MODE=copy
+
 
 # Persist for future shells
 cat << 'EOF' >> ~/.bashrc
@@ -89,4 +91,5 @@ export TORCH_HOME=/mnt/nvme/torch-cache
 export XDG_CACHE_HOME=/mnt/nvme
 export WHISPER_MODEL_DOWNLOAD_DIR=/mnt/nvme/models
 export PATH="$HOME/.local/bin:$PATH"
+export UV_LINK_MODE=copy
 EOF
