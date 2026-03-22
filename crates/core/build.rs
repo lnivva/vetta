@@ -9,9 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proto_path = manifest_dir.join("../../proto/speech/speech.proto");
     let proto_dir = manifest_dir.join("../../proto");
 
-    println!("cargo:rerun-if-changed={}", proto_path.display());
-
-    tonic_build::configure()
+    tonic_prost_build::configure()
         .build_server(false)
         .compile_protos(&[proto_path], &[proto_dir])?;
 
