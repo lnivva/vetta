@@ -1,27 +1,50 @@
 # Configuration Reference
 
-The Whisper STT service is configured via a `config.toml` file. Every value can be
-overridden at runtime with an environment variable following the pattern:
+The Whisper STT service is configured via a `config.toml` file. Every value can be overridden at runtime with an
+environment variable following the pattern:
 
-```
-
+```text
 WHISPER_<SECTION>_<KEY>
-
 ```
 
 For example, `WHISPER_MODEL_SIZE=medium` overrides `[model] size`.
-
----
 
 ## `[service]`
 
 General service-level settings that control the gRPC server behavior and operational limits.
 
-| Property            | Type      | Default             | Description                                                                                                                                                                                                                        |
-|---------------------|-----------|---------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `socket_path`       | `string`  | `/tmp/whisper.sock` | Filesystem path for the Unix domain socket the gRPC server binds to. The socket file is created on startup (any existing file at this path is removed first) and its permissions are set to `0600` (owner read/write only).        |
-| `log_level`         | `string`  | `info`              | Minimum severity level for log output. Logs are emitted as structured JSON to stdout.                                                                                                                                              |
-| `max_audio_size_mb` | `integer` | `100`               | Maximum allowed audio payload size in megabytes. Applies to both inline `data` (raw bytes) and remote `uri` sources (checked via the `Content-Length` header). Requests exceeding this limit are rejected with `INVALID_ARGUMENT`. |
+| Property            | Type      | Default                    | Description                                                                                                                                                                                                                        |
+|---------------------|-----------|----------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `address`           | `string`  | `unix:///tmp/whisper.sock` | The address the gRPC server binds to. Supports two formats: **Unix domain socket** (`unix:///path/to/socket`) for same-host communication, or **TCP** (`host:port`) for remote/cross-machine access. See details below.            |
+| `log_level`         | `string`  | `info`                     | Minimum severity level for log output. Logs are emitted as structured JSON to stdout.                                                                                                                                              |
+| `max_audio_size_mb` | `integer` | `100`                      | Maximum allowed audio payload size in megabytes. Applies to both inline `data` (raw bytes) and remote `uri` sources (checked via the `Content-Length` header). Requests exceeding this limit are rejected with `INVALID_ARGUMENT`. |
+
+### `address` formats
+
+| Format          | Example                    | Description                                                                                                                                                                                                                          |
+|-----------------|----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `unix://<path>` | `unix:///tmp/whisper.sock` | Binds to a Unix domain socket. The socket file is created on startup (any existing file at this path is removed first) and its permissions are set to `0600` (owner read/write only). **Best for same-host or sidecar deployments.** |
+| `<host>:<port>` | `0.0.0.0:50051`            | Binds to a TCP address. Use `0.0.0.0` to listen on all interfaces, or a specific IP to restrict. **Required for cross-machine access.**                                                                                              |
+
+:::tip Choosing between UDS and TCP
+
+| Consideration        | Unix Domain Socket                    | TCP                              |
+|----------------------|---------------------------------------|----------------------------------|
+| Cross-machine access | Same host only                        | Any network topology             |
+| Performance          | ~2–3× lower latency (no TCP overhead) | Slight overhead from TCP stack   |
+| Security             | Filesystem permissions (simple)       | Requires TLS/mTLS or firewall    |
+| Containers           | Requires shared volume mount          | Works natively across containers |
+| Load balancing       | Not applicable                        | Standard L4/L7 balancing         |
+
+**Use UDS** when the client runs on the same machine or in a sidecar container.
+**Use TCP** when the client runs on a different machine or behind a load balancer.
+:::
+
+:::warning TCP security
+When using a TCP address, the server binds **without TLS** by default. In production, place the service behind a
+TLS-terminating proxy (e.g., Envoy, nginx) or implement mTLS at the gRPC level. Never expose an insecure TCP port to
+untrusted networks.
+:::
 
 ### `log_level` values
 
@@ -33,12 +56,9 @@ General service-level settings that control the gRPC server behavior and operati
 | `error` | Only errors.                                                                                                               |
 
 :::tip
-The socket path must be accessible to both the gRPC server process and any client
-connecting to it. When running in a container, mount the socket directory as a shared
-volume.
+When using a Unix domain socket, the socket path must be accessible to both the gRPC server process and any client
+connecting to it. When running in a container, mount the socket directory as a shared volume.
 :::
-
----
 
 ## `[model]`
 
@@ -62,8 +82,8 @@ Controls which Whisper model is loaded and how it runs on the available hardware
 | `large-v3` | 1550M      | 1x             | ~2.7%       | ~10 GB         | Best accuracy. **Recommended when hardware allows.** |
 
 :::note
-Word Error Rate (WER) figures are approximate and vary by language, audio quality,
-and domain. These are based on OpenAI's published benchmarks on English test sets.
+Word Error Rate (WER) figures are approximate and vary by language, audio quality, and domain. These are based on
+OpenAI's published benchmarks on English test sets.
 :::
 
 ### `device` values
@@ -75,10 +95,9 @@ and domain. These are based on OpenAI's published benchmarks on English test set
 | `cpu`  | Force CPU inference. Works on all platforms. Pair with `compute_type = "int8"` for best CPU performance.                                                                                                                       |
 
 :::warning
-CTranslate2 (the engine behind faster-whisper) does **not** support Apple MPS.
-On macOS with Apple Silicon, the model runs on CPU using optimized ARM NEON
-instructions. Setting `device = "cuda"` on a machine without a compatible GPU
-will cause a startup error.
+CTranslate2 (the engine behind faster-whisper) does **not** support Apple MPS. On macOS with Apple Silicon, the model
+runs on CPU using optimized ARM NEON instructions. Setting `device = "cuda"` on a machine without a compatible GPU will
+cause a startup error.
 :::
 
 ### `compute_type` values
@@ -90,8 +109,6 @@ will cause a startup error.
 | `int8_float16` | `cuda`             | Mixed precision — weights in INT8, activations in FP16. Reduces VRAM usage by ~40% vs. `float16` with a small speed trade-off.                         |
 | `int8`         | `cpu`, `cuda`      | 8-bit integer quantization. **Best choice for CPU inference** — leverages AVX2/AVX-512 on x86 and NEON on ARM. ~2x faster than `float32` on CPU.       |
 | `float32`      | `cpu`, `cuda`      | Full 32-bit precision. Slowest but highest numerical fidelity. Rarely needed in practice.                                                              |
-
----
 
 ## `[inference]`
 
@@ -110,14 +127,14 @@ Parameters that control the transcription behavior of the Whisper model at reque
 
 :::tip Tuning for your use case
 
-**Meetings / conversations:** Lower `vad_min_silence_ms` to `200`–`300` to capture
-quick speaker turns. Keep `beam_size` at `5`.
+**Meetings / conversations:** Lower `vad_min_silence_ms` to `200`–`300` to capture quick speaker turns. Keep `beam_size`
+at `5`.
 
-**Podcasts / monologues:** `vad_min_silence_ms` of `500`–`800` works well.
-Consider `beam_size = 3` for faster processing.
+**Podcasts / monologues:** `vad_min_silence_ms` of `500`–`800` works well. Consider `beam_size = 3` for faster
+processing.
 
-**Noisy audio:** Tighten `no_speech_threshold` to `0.4` and `log_prob_threshold`
-to `-0.5` to aggressively filter low-confidence output.
+**Noisy audio:** Tighten `no_speech_threshold` to `0.4` and `log_prob_threshold`to `-0.5` to aggressively filter
+low-confidence output.
 
 **Domain-specific vocabulary:** Use `initial_prompt` to prime the model, e.g.:
 
@@ -126,8 +143,6 @@ initial_prompt = "MongoDB, Atlas, aggregation pipeline, BSON, sharding"
 ```
 
 :::
-
----
 
 ## `[concurrency]`
 
@@ -162,14 +177,11 @@ thread usage of CTranslate2 + PyTorch (pyannote) does not exceed your core count
 **Rule of thumb:** `cpu_threads` ≤ `physical_cores / 2` when diarization is enabled.
 :::
 
----
-
 ## `[diarization]`
 
-Configuration for the optional speaker diarization pipeline powered by
-[pyannote.audio](https://github.com/pyannote/pyannote-audio). When enabled,
-the service can identify **who spoke when** and populate the `speaker_id`
-field in `TranscriptChunk` responses.
+Configuration for the optional speaker diarization pipeline powered
+by [pyannote.audio](https://github.com/pyannote/pyannote-audio). When enabled, the service can identify **who spoke when
+** and populate the `speaker_id` field in `TranscriptChunk` responses.
 
 | Property       | Type      | Default                            | Description                                                                                                                                                  |
 |----------------|-----------|------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -197,8 +209,7 @@ export WHISPER_DIARIZATION_HF_TOKEN="hf_abc123..."
 ```
 
 :::danger
-Never commit your `hf_token` to version control. Use environment variables
-or a secrets manager in production.
+Never commit your `hf_token` to version control. Use environment variables or a secrets manager in production.
 :::
 
 ### `device` values
@@ -222,9 +233,8 @@ compute_type = "int8"   # Fast on ARM NEON
 device = "mps"          # PyTorch supports MPS — uses the Apple GPU
 ```
 
-This lets Whisper leverage optimized ARM INT8 instructions on the CPU while
-the diarization pipeline runs on the GPU via Metal, making efficient use of
-both compute resources.
+This lets Whisper leverage optimized ARM INT8 instructions on the CPU while the diarization pipeline runs on the GPU via
+Metal, making efficient use of both compute resources.
 :::
 
 ### `min_speakers` / `max_speakers` behavior
@@ -234,30 +244,26 @@ both compute resources.
 | `0`   | **Auto-detect.** Let pyannote determine the number of speakers automatically. Works well for most cases.                           |
 | `1`+  | Constrain the speaker count. If you know the audio contains exactly 2 speakers, set both to `2` for significantly better accuracy. |
 
-These serve as **defaults** — they can be overridden per-request via the
-`num_speakers` field in `TranscribeOptions`. When `num_speakers` is set in a
-request, it is used for both `min_speakers` and `max_speakers`.
+These serve as **defaults** — they can be overridden per-request via the `num_speakers` field in `TranscribeOptions`.
+When `num_speakers` is set in a request, it is used for both `min_speakers` and `max_speakers`.
 
 :::note Diarization and streaming
-When diarization is enabled for a request, transcript segments are **collected
-before being returned** (rather than streamed incrementally). This is because
-speaker labels are assigned by computing temporal overlap between Whisper segments
-and pyannote speaker turns — which requires all segments to be available.
+When diarization is enabled for a request, transcript segments are **collected before being returned** (rather than
+streamed incrementally). This is because speaker labels are assigned by computing temporal overlap between Whisper
+segments and pyannote speaker turns — which requires all segments to be available.
 
-This adds latency proportional to the audio duration. For real-time streaming
-without speaker labels, send requests with `diarization = false`.
+This adds latency proportional to the audio duration. For real-time streaming without speaker labels, send requests with
+`diarization = false`.
 :::
-
----
 
 ## Environment Variable Reference
 
-All settings support environment variable overrides. The variable name follows
-the pattern `WHISPER_<SECTION>_<KEY>` in uppercase.
+All settings support environment variable overrides. The variable name follows the pattern `WHISPER_<SECTION>_<KEY>` in
+uppercase.
 
 | Environment Variable                            | Config Equivalent                         | Type      |
 |-------------------------------------------------|-------------------------------------------|-----------|
-| `WHISPER_SERVICE_SOCKET_PATH`                   | `[service] socket_path`                   | `string`  |
+| `WHISPER_SERVICE_ADDRESS`                       | `[service] address`                       | `string`  |
 | `WHISPER_SERVICE_LOG_LEVEL`                     | `[service] log_level`                     | `string`  |
 | `WHISPER_SERVICE_MAX_AUDIO_SIZE_MB`             | `[service] max_audio_size_mb`             | `integer` |
 | `WHISPER_MODEL_SIZE`                            | `[model] size`                            | `string`  |
@@ -289,13 +295,14 @@ the pattern `WHISPER_<SECTION>_<KEY>` in uppercase.
 - **float**: Parsed with `float()`
 - **string**: Used as-is
 
----
-
 ## Example Configurations
 
 ### Minimal CPU setup
 
 ```toml
+[service]
+address = "unix:///tmp/whisper.sock"
+
 [model]
 device = "cpu"
 compute_type = "int8"
@@ -305,9 +312,12 @@ size = "base"
 enabled = false
 ```
 
-### Production GPU server
+### Production GPU server (TCP)
 
 ```toml
+[service]
+address = "0.0.0.0:50051"
+
 [model]
 device = "cuda"
 compute_type = "float16"
@@ -326,6 +336,9 @@ device = "cuda"
 ### Apple Silicon (M-series Mac)
 
 ```toml
+[service]
+address = "unix:///tmp/whisper.sock"
+
 [model]
 device = "cpu"
 compute_type = "int8"
@@ -338,4 +351,21 @@ cpu_threads = 4
 enabled = true
 hf_token = ""  # use WHISPER_DIARIZATION_HF_TOKEN env var
 device = "mps"
+```
+
+### Remote GPU with CLI on a separate machine
+
+```toml
+[service]
+address = "0.0.0.0:50051"  # TCP — accessible from other hosts
+
+[model]
+device = "cuda"
+compute_type = "float16"
+size = "large-v3"
+
+[diarization]
+enabled = true
+hf_token = ""
+device = "cuda"
 ```
