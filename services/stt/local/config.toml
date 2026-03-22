@@ -1,5 +1,5 @@
 [service]
-socket_path = "/tmp/whisper.sock"
+address = "unix:///tmp/whisper.sock" # 0.0.0.0:50051
 log_level = "info"
 max_audio_size_mb = 100
 
