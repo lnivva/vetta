@@ -46,3 +46,16 @@ updates:
     commit-message:
       prefix: "deps(ci)"
       include: "scope"
+
+  - package-ecosystem: "terraform"
+    directory: "/infra/terraform"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "terraform"
+      - "infra"
+    commit-message:
+      prefix: "deps(terraform)"
+      include: "scope"
