@@ -34,7 +34,7 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
     inference_defaults.update(inference_overrides)
     return Settings(
         service=ServiceConfig(
-            socket_path=str(tmp_dir / "t.sock"), log_level="info", max_audio_size_mb=10
+            address=str(tmp_dir / "t.sock"), log_level="info", max_audio_size_mb=10
         ),
         model=ModelConfig(
             size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"

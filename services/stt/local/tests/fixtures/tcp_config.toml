@@ -1,5 +1,5 @@
 [service]
-address = "unix:///tmp/whisper.sock" # 0.0.0.0:50051
+address = "0.0.0.0:50051"
 log_level = "info"
 max_audio_size_mb = 100
 
@@ -12,23 +12,22 @@ compute_type = "int8"
 [inference]
 beam_size = 5
 vad_filter = true
-vad_min_silence_ms = 300
+vad_min_silence_ms = 500
 no_speech_threshold = 0.6
-log_prob_threshold = -0.5
-compression_ratio_threshold = 2.0
+log_prob_threshold = -1.0
+compression_ratio_threshold = 2.4
 word_timestamps = true
 initial_prompt = ""
 
 [concurrency]
-max_workers = 1
-cpu_threads = 8
+max_workers = 2
+cpu_threads = 4
 num_workers = 1
 
-
 [diarization]
-enabled = true
-hf_token = "" # or set WHISPER_DIARIZATION_HF_TOKEN env var
+enabled = false
+hf_token = ""
 model = "pyannote/speaker-diarization-3.1"
-device = "cpu" # align with model.device, or use "cuda" if GPU available
+device = "cpu"
 min_speakers = 0
 max_speakers = 0

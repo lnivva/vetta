@@ -45,20 +45,15 @@ def setup_logging():
 
 
 def serve(config_path: str):
-    """
-    Start the Whisper gRPC service using settings from the given configuration file.
-
-    Loads settings from config_path, creates and starts a gRPC server bound to the Unix domain socket specified by settings.service.socket_path, registers the WhisperServicer, sets the socket file permissions to owner read/write (0o600), and installs SIGTERM/SIGINT handlers that perform a graceful shutdown with a 10-second grace period.
-
-    Parameters:
-        config_path (str): Filesystem path to the configuration file used to load service settings.
-    """
     setup_logging()
 
     settings = load_settings(config_path)
+    address = settings.service.address
     socket_path = settings.service.socket_path
 
-    if os.path.exists(socket_path):
+    assert socket_path is not None, "Socket path should not be None"
+
+    if socket_path and os.path.exists(socket_path):
         os.unlink(socket_path)
 
     server = grpc.server(
@@ -68,26 +63,23 @@ def serve(config_path: str):
         WhisperServicer(settings), server
     )
 
-    server.add_insecure_port(f"unix://{socket_path}")
-    server.start()
-    os.chmod(socket_path, 0o600)
+    if settings.service.is_unix_socket:
+        server.add_insecure_port(address)
+        server.start()
+        os.chmod(socket_path, 0o600)
+    else:
+        # TODO: harden security (ssl/tls mtls)
+        server.add_insecure_port(address)
+        server.start()
 
-    logger.info("Service started", extra={"socket_path": socket_path})
+    logger.info("Service started", extra={"address": address})
 
-    # --- Graceful Shutdown Logic ---
     def handle_shutdown(signum, frame):
-        """
-        Handle termination signals by stopping the gRPC server and waiting up to 10 seconds for active RPCs to finish.
-
-        Blocks until shutdown completes.
-        """
         logger.info(f"Received signal {signum}, shutting down...")
-        # server.stop(grace) returns an event that we can wait for
         stop_event = server.stop(grace=10)
         stop_event.wait()
         logger.info("Shutdown complete.")
 
-    # Register signals
     signal.signal(signal.SIGTERM, handle_shutdown)
     signal.signal(signal.SIGINT, handle_shutdown)
 

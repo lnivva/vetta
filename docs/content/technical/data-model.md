@@ -1,10 +1,10 @@
-# Earnings Call Analytics — Data Model Documentation
+# Earnings Call Analytics — Data Model
 
 ## Overview
 
 This document describes the MongoDB data model for an earnings call analytics platform. The system ingests audio
-recordings of public company earnings calls, transcribes them, generates vector embeddings, and exposes the content
-through text search, semantic search, and reranked hybrid retrieval.
+recordings of public company earnings calls, transcribes them, identifies speakers through diarization, generates vector
+embeddings, and exposes the content through text search, semantic search, and reranked hybrid retrieval.
 
 The model uses **two collections**:
 
@@ -22,6 +22,9 @@ Audio File
 Transcription (Whisper)
   │
   ▼
+Diarization (Speaker Attribution)
+  │
+  ▼
 ┌──────────────────────┐
 │   earnings_calls     │  ← Source of truth. No embeddings.
 │   (one doc per call) │
@@ -37,26 +40,23 @@ Transcription (Whisper)
   Atlas Vector Search / Atlas Search / Reranker
 ```
 
----
-
 ## Design Principles
 
-| Principle                             | Rationale                                                         |
-|---------------------------------------|-------------------------------------------------------------------|
-| Separate source from derived chunks   | Re-chunk and re-embed without touching the original transcript    |
-| Chunk at the dialogue turn level      | A speaker's contiguous utterance is the natural semantic boundary |
-| Collocate embeddings with text        | Eliminates cross-collection joins during vector search            |
-| Denormalize filter fields onto chunks | Vector and text search stages can filter without `$lookup`        |
-| Track model lineage                   | Enables incremental re-embedding when models are upgraded         |
-
----
+| Principle                              | Rationale                                                                |
+|----------------------------------------|--------------------------------------------------------------------------|
+| Separate source from derived chunks    | Re-chunk and re-embed without touching the original transcript           |
+| Chunk at the dialogue turn level       | A speaker's contiguous utterance is the natural semantic boundary        |
+| Collocate embeddings with text         | Eliminates cross-collection joins during vector search                   |
+| Denormalize filter fields onto chunks  | Vector and text search stages can filter without `$lookup`               |
+| Track model lineage                    | Enables incremental re-embedding when models are upgraded                |
+| Store diarization alongside transcript | Speaker attribution is part of the source record, not a derived artifact |
 
 ## Collection: `earnings_calls`
 
 ### Purpose
 
-Stores one document per earnings call. Acts as the filtering entry point and the authoritative record of the transcript.
-Contains **no embeddings**.
+Stores one document per earnings call. Acts as the filtering entry point and the authoritative record of the transcript
+and speaker attribution. Contains **no embeddings**.
 
 ### Schema
 
@@ -123,6 +123,7 @@ Contains **no embeddings**.
   "status": "processed",
   "model_versions": {
     "stt": "whisper-large-v3",
+    "diarization": "pyannote/speaker-diarization-3.1",
     "embedding": "voyage-finance-2",
     "embedding_dimensions": 1024
   },
@@ -132,37 +133,38 @@ Contains **no embeddings**.
 
 ### Field Reference
 
-| Field                                 | Type           | Description                                                                      |
-|---------------------------------------|----------------|----------------------------------------------------------------------------------|
-| `ticker`                              | String         | Stock ticker symbol                                                              |
-| `year`                                | Number         | Fiscal year                                                                      |
-| `quarter`                             | String         | Fiscal quarter (`Q1`–`Q4`)                                                       |
-| `company.name`                        | String         | Legal entity name                                                                |
-| `company.sector`                      | String         | GICS sector classification                                                       |
-| `company.industry`                    | String         | GICS industry classification                                                     |
-| `company.exchange`                    | String         | Stock exchange                                                                   |
-| `call_date`                           | Date           | Scheduled call start time (UTC)                                                  |
-| `source.file_name`                    | String         | Original uploaded file name                                                      |
-| `source.file_hash`                    | String         | SHA-256 content hash for deduplication                                           |
-| `source.format`                       | String         | Media container/codec format                                                     |
-| `source.duration_seconds`             | Number         | Audio duration in seconds                                                        |
-| `source.ingested_at`                  | Date           | Timestamp of file ingestion                                                      |
-| `stats.segment_count`                 | Number         | Raw ASR segment count                                                            |
-| `stats.turn_count`                    | Number         | Merged dialogue turn count                                                       |
-| `stats.speaker_count`                 | Number         | Distinct speakers detected                                                       |
-| `stats.word_count`                    | Number         | Total transcript word count                                                      |
-| `stats.chunk_count`                   | Number         | Corresponding document count in `earnings_chunks`                                |
-| `speakers[].speaker_id`               | String         | ASR-assigned speaker identifier                                                  |
-| `speakers[].role`                     | String         | `operator` \| `executive` \| `analyst` \| `unknown`                              |
-| `speakers[].name`                     | String \| null | Resolved speaker name                                                            |
-| `speakers[].title`                    | String \| null | Job title                                                                        |
-| `speakers[].firm`                     | String \| null | Company or research firm                                                         |
-| `transcript.segments[]`               | Array          | Raw ASR output segments                                                          |
-| `status`                              | String         | Pipeline state: `ingested` → `transcribed` → `chunked` → `processed` \| `failed` |
-| `model_versions.stt`                  | String         | Speech-to-text model identifier                                                  |
-| `model_versions.embedding`            | String         | Embedding model identifier                                                       |
-| `model_versions.embedding_dimensions` | Number         | Vector dimensionality                                                            |
-| `updated_at`                          | Date           | Last modification timestamp                                                      |
+| Field                                 | Type           | Description                                                                                   |
+|---------------------------------------|----------------|-----------------------------------------------------------------------------------------------|
+| `ticker`                              | String         | Stock ticker symbol                                                                           |
+| `year`                                | Number         | Fiscal year                                                                                   |
+| `quarter`                             | String         | Fiscal quarter (`Q1`–`Q4`)                                                                    |
+| `company.name`                        | String         | Legal entity name                                                                             |
+| `company.sector`                      | String         | GICS sector classification                                                                    |
+| `company.industry`                    | String         | GICS industry classification                                                                  |
+| `company.exchange`                    | String         | Stock exchange                                                                                |
+| `call_date`                           | Date           | Scheduled call start time (UTC)                                                               |
+| `source.file_name`                    | String         | Original uploaded file name                                                                   |
+| `source.file_hash`                    | String         | SHA-256 content hash for deduplication                                                        |
+| `source.format`                       | String         | Media container/codec format                                                                  |
+| `source.duration_seconds`             | Number         | Audio duration in seconds                                                                     |
+| `source.ingested_at`                  | Date           | Timestamp of file ingestion                                                                   |
+| `stats.segment_count`                 | Number         | Raw ASR segment count                                                                         |
+| `stats.turn_count`                    | Number         | Merged dialogue turn count                                                                    |
+| `stats.speaker_count`                 | Number         | Distinct speakers detected                                                                    |
+| `stats.word_count`                    | Number         | Total transcript word count                                                                   |
+| `stats.chunk_count`                   | Number         | Corresponding document count in `earnings_chunks`                                             |
+| `speakers[].speaker_id`               | String         | ASR-assigned speaker identifier                                                               |
+| `speakers[].role`                     | String         | `operator` \| `executive` \| `analyst` \| `unknown`                                           |
+| `speakers[].name`                     | String \| null | Resolved speaker name                                                                         |
+| `speakers[].title`                    | String \| null | Job title                                                                                     |
+| `speakers[].firm`                     | String \| null | Company or research firm                                                                      |
+| `transcript.segments[]`               | Array          | Raw ASR output segments                                                                       |
+| `status`                              | String         | Pipeline state: `ingested` → `transcribed` → `diarized` → `chunked` → `processed` \| `failed` |
+| `model_versions.stt`                  | String         | Speech-to-text model identifier                                                               |
+| `model_versions.diarization`          | String         | Diarization model identifier                                                                  |
+| `model_versions.embedding`            | String         | Embedding model identifier                                                                    |
+| `model_versions.embedding_dimensions` | Number         | Vector dimensionality                                                                         |
+| `updated_at`                          | Date           | Last modification timestamp                                                                   |
 
 ### Indexes
 
@@ -183,7 +185,46 @@ db.earnings_calls.createIndex({"company.sector": 1, call_date: -1})
 db.earnings_calls.createIndex({status: 1, updated_at: -1})
 ```
 
----
+## Diarization
+
+Speaker diarization assigns a speaker label to each time segment of the audio. The diarization model produces unlabeled
+clusters (`Speaker 0`, `Speaker 1`, …). It knows *when* speakers change but not *who* they are.
+
+### How It Fits in the Pipeline
+
+Diarization runs after transcription. The raw outputs are:
+
+- **Transcription** → timestamped text segments (what was said, when)
+- **Diarization** → timestamped speaker segments (who spoke, when)
+
+These are aligned by timestamp overlap to produce the final transcript segments, where each segment carries both `text`
+and a `speaker_id`.
+
+### Speaker Resolution
+
+The `speakers` array maps raw diarization labels to identities. Resolution can be:
+
+- **Manual**: an operator assigns names after reviewing the transcript
+- **Heuristic**: pattern matching on introductions ("This is Dev Ittycheria, CEO of MongoDB")
+- **Automated**: speaker identification models (future)
+
+Until resolved, speakers remain as `Speaker 0`, `Speaker 1`, etc. with `role: "unknown"` and null identity fields. The
+pipeline does not block on resolution, chunking and embedding proceed with whatever speaker state exists.
+
+### What Gets Stored
+
+Diarization does not produce a separate data structure. Its output is folded into two existing fields on
+`earnings_calls`:
+
+| Field                              | Purpose                                                                                                           |
+|------------------------------------|-------------------------------------------------------------------------------------------------------------------|
+| `speakers`                         | Resolved registry. Maps each `speaker_id` to a name, role, title, and firm. Editable when corrections are needed. |
+| `transcript.segments[].speaker_id` | The join point. Each text segment references a speaker from the registry.                                         |
+
+The diarization model identifier is recorded in `model_versions.diarization` for lineage tracking.
+
+If the diarization model is upgraded, speaker alignment is recomputed, `transcript.segments` is updated, and the
+`speakers` registry may need re-resolution depending on whether cluster assignments shifted.
 
 ## Collection: `earnings_chunks`
 
@@ -306,7 +347,6 @@ retrieval. Embeddings are collocated with the text they represent.
     ]
   }
 }
-
 ```
 
 Filter fields are declared in the vector index definition so that pre-filtered approximate nearest neighbor (ANN) search
@@ -359,7 +399,6 @@ can narrow candidates **before** distance computation.
     }
   }
 }
-
 ```
 
 The `text` field uses `lucene.english` for stemmed full-text search with a `keyword` multi-field for exact match.
@@ -378,8 +417,6 @@ db.earnings_chunks.createIndex({ticker: 1, call_date: -1})
 db.earnings_chunks.createIndex({model_version: 1})
 ```
 
----
-
 ## Query Patterns
 
 ### Semantic Search with Pre-Filtering
@@ -393,7 +430,7 @@ db.earnings_chunks.aggregate([
         $vectorSearch: {
             index: "chunk_vector_index",
             path: "embedding",
-            queryVector: queryEmbedding,       // 1024-d vector from voyage-finance-2
+            queryVector: queryEmbedding,
             numCandidates: 200,
             limit: 50,
             filter: {
@@ -425,9 +462,6 @@ db.earnings_chunks.aggregate([
     }
 ])
 ```
-
-The application then sends the candidate `text` values to the Voyage rerank API with the original query and returns the
-top results.
 
 ### Full-Text Search with Metadata Filters
 
@@ -472,8 +506,6 @@ db.earnings_chunks
     .sort({chunk_index: 1})
 ```
 
-Uses the `{ call_id: 1, chunk_index: 1 }` index.
-
 ### Find Chunks Needing Re-Embedding
 
 Identify chunks still on an older embedding model.
@@ -481,10 +513,6 @@ Identify chunks still on an older embedding model.
 ```javascript
 db.earnings_chunks.find({model_version: "voyage-finance-1"})
 ```
-
-Uses the `{ model_version: 1 }` index.
-
----
 
 ## Denormalization Strategy
 
@@ -505,26 +533,23 @@ Search stages.
 **Trade-off:** If a company's sector classification changes, both collections must be updated. In practice, sector
 reclassifications are rare and can be handled by a batch update script.
 
----
-
 ## Lifecycle States
 
 The `earnings_calls.status` field tracks pipeline progress:
 
-```
-ingested → transcribed → chunked → processed
-                                  ↘ failed
+```text
+ingested → transcribed → diarized → chunked → processed
+                                             ↘ failed
 ```
 
-| Status        | Meaning                                                         |
-|---------------|-----------------------------------------------------------------|
-| `ingested`    | Audio file received and stored                                  |
-| `transcribed` | Whisper transcription complete; `transcript.segments` populated |
-| `chunked`     | Dialogue turns extracted; `earnings_chunks` documents created   |
-| `processed`   | Embeddings generated and written to chunks                      |
-| `failed`      | An error occurred; check logs for the failed stage              |
-
----
+| Status        | Meaning                                                                                                    |
+|---------------|------------------------------------------------------------------------------------------------------------|
+| `ingested`    | Audio file received and stored                                                                             |
+| `transcribed` | Whisper transcription complete; `transcript.segments` populated                                            |
+| `diarized`    | Speaker diarization complete; `diarization.segments` and `speakers` populated, transcript segments aligned |
+| `chunked`     | Dialogue turns extracted; `earnings_chunks` documents created                                              |
+| `processed`   | Embeddings generated and written to chunks                                                                 |
+| `failed`      | An error occurred; check logs for the failed stage                                                         |
 
 ## Context Window Design
 
@@ -550,8 +575,6 @@ This serves two purposes:
 
 The `token_count` field enables precise context window budgeting when assembling multiple chunks for LLM input.
 
----
-
 ## Extensibility
 
 | Extension                       | Approach                                                                                                                     |
@@ -559,4 +582,5 @@ The `token_count` field enables precise context window budgeting when assembling
 | **Multi-tenancy**               | Add a `tenant_id` field to both collections and include it as a `filter` field in both search index definitions              |
 | **New embedding model**         | Write new `earnings_chunks` documents with the updated `model_version`; query by `model_version` to track migration progress |
 | **Different chunking strategy** | Drop and recreate `earnings_chunks`; `earnings_calls` remains unchanged                                                      |
+| **New diarization model**       | Rerun diarization, update `diarization.segments`, re-align transcript, re-resolve speakers. Source audio is unchanged.       |
 | **Additional metadata**         | Add fields to `earnings_chunks` and register them as `filter` fields in the relevant search index                            |

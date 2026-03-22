@@ -75,6 +75,7 @@ export default defineConfig({
                     text: "Technical Documentation",
                     items: [
                         {text: "Architecture", link: "/technical/architecture"},
+                        {text: "Processing Pipeline", link: "/technical/processing-pipeline"},
                         {text: "Data Model", link: "/technical/data-model"},
                         {text: "Search & Retrieval", link: "/technical/search-retrieval"},
                     ],
@@ -95,4 +96,5 @@ export default defineConfig({
             message: "Vetta Financial Engine",
         },
     },
-});
+})
+;

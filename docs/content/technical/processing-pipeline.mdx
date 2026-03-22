@@ -1,0 +1,44 @@
+## Processing Pipeline
+
+The STT service is a standalone gRPC server that owns everything between raw audio and transcribed segments. The core
+library sends audio in and receives timestamped, speaker-attributed text back. It has no knowledge of the models or
+runtimes involved.
+
+![STT Service Architecture](/vetta-processing-pipeline-arch.png)
+
+### Stages
+
+Every request follows five sequential stages:
+
+1. **Resolve**: Determine the audio source (local path, inline bytes, or remote URI). Remote URIs are validated against
+SSRF rules and streamed with size limits.
+2. **Preprocess**: Decode audio to 16 kHz mono float32 via ffmpeg. If diarization is requested, a separate seekable
+copy is prepared for pyannote.
+3. **Diarize**: Run speaker diarization to produce timestamped speaker labels. This stage is optional and controlled
+per-request.
+4. **Transcribe**: Stream audio through Whisper, yielding segments as they are recognized.
+5. **Stream**: Merge transcription segments with speaker labels and yield `TranscriptChunk` messages back over the gRPC
+stream.
+
+### Transport
+
+The server supports two transport modes:
+
+- **Unix Domain Socket**: default for same-host deployments, avoids TCP overhead
+- **TCP**: for cross-machine setups
+
+Transport is a configuration choice. The pipeline is identical either way.
+
+### Speaker Attribution
+
+Diarization and transcription run as independent inference passes. Whisper produces timestamped text; pyannote produces
+timestamped speaker labels. The service merges them by temporal overlap. Each segment is assigned the speaker with the
+greatest time intersection.
+
+This means the two models can be upgraded, replaced, or scaled independently.
+
+### Configuration
+
+All runtime behavior (model selection, device placement, compute type, concurrency, diarization toggle) is driven by a
+TOML config file with environment variable overrides. Hardware detection (CUDA availability, core count, VRAM) runs at
+startup to resolve `auto` values into concrete settings.

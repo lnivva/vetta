@@ -14,9 +14,20 @@ ComputeType = Literal["float16", "int8_float16", "int8", "float32"]
 
 @dataclass
 class ServiceConfig:
-    socket_path: str
+    address: str
     log_level: str
     max_audio_size_mb: int
+
+    @property
+    def is_unix_socket(self) -> bool:
+        return self.address.startswith("unix://")
+
+    @property
+    def socket_path(self) -> str | None:
+        """Return the filesystem path if this is a UDS address, else None."""
+        if self.is_unix_socket:
+            return self.address[len("unix://") :]
+        return None
 
 
 @dataclass
@@ -308,8 +319,8 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
 
     settings = Settings(
         service=ServiceConfig(
-            socket_path=_env(
-                "service", "socket_path", svc.get("socket_path", "/tmp/whisper.sock")
+            address=_env(
+                "service", "address", svc.get("address", "unix:///tmp/whisper.sock")
             ),
             log_level=_env("service", "log_level", svc.get("log_level", "info")),
             max_audio_size_mb=_env(
@@ -386,7 +397,7 @@ def _print_summary(s: Settings):
     print(f"  Model          : {s.model.size}")
     print(f"  CPU threads    : {s.concurrency.cpu_threads}")
     print(f"  Max workers    : {s.concurrency.max_workers}")
-    print(f"  Socket         : {s.service.socket_path}")
+    print(f"  Address        : {s.service.address}")
     print(f"  Max Audio Size : {s.service.max_audio_size_mb}MB")
     print(f"  Diarization    : {'enabled' if s.diarization.enabled else 'disabled'}")
     if s.diarization.enabled:
