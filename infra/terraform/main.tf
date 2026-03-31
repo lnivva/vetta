@@ -72,6 +72,16 @@ resource "aws_security_group_rule" "allow_ssh" {
   description       = "Allow SSH from specific IPs"
 }
 
+resource "aws_security_group_rule" "https" {
+  type              = "egress"
+  from_port         = 443
+  to_port           = 443
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow HTTPS outbound traffic"
+}
+
 resource "aws_instance" "vetta_ec2" {
   ami                         = data.aws_ssm_parameter.ubuntu_2404_ami.value
   associate_public_ip_address = true
