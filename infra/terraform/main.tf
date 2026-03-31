@@ -34,6 +34,13 @@ data "aws_ssm_parameter" "ubuntu_2404_ami" {
 }
 
 # -------------------------------------------------------------------
+# VPC lookup
+# -------------------------------------------------------------------
+data "aws_vpc" "vetta_vpc" {
+  id = var.vetta_vpc_id
+}
+
+# -------------------------------------------------------------------
 # Subnet lookup
 # -------------------------------------------------------------------
 data "aws_subnet" "vetta_public" {
@@ -44,10 +51,25 @@ data "aws_subnet" "vetta_public" {
 }
 
 # -------------------------------------------------------------------
-# EC2 Instance
+# EC2 Instance & Security Group
 # -------------------------------------------------------------------
-locals {
-  init_script = "${path.module}/../ec2/init.sh"
+resource "aws_security_group" "vetta_server_security_group" {
+  name   = "vetta_security_group"
+  vpc_id = data.aws_vpc.vetta_vpc.id
+
+  tags = {
+    Name = "vetta_security_group"
+  }
+}
+
+resource "aws_security_group_rule" "allow_ssh" {
+  type              = "ingress"
+  from_port         = 22
+  to_port           = 22
+  protocol          = "tcp"
+  cidr_blocks       = var.allowed_ssh_ips
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow SSH from specific IPs"
 }
 
 resource "aws_instance" "vetta_ec2" {
@@ -58,7 +80,7 @@ resource "aws_instance" "vetta_ec2" {
   subnet_id                   = data.aws_subnet.vetta_public.id
   user_data_base64            = filebase64("${path.module}/../ec2/init.sh")
   user_data_replace_on_change = true
-  vpc_security_group_ids      = var.security_group
+  vpc_security_group_ids      = [aws_security_group.vetta_server_security_group.id]
 
   root_block_device {
     volume_size           = 60

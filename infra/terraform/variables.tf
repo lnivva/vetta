@@ -1,9 +1,3 @@
-variable "security_group" {
-  description = "Vetta Server Security Group"
-  nullable    = false
-  type        = set(string)
-}
-
 variable "instance_type" {
   description = "Vetta Server EC2 Instance Type (Nvidia GPU enabled)"
   nullable    = false
@@ -14,4 +8,16 @@ variable "ec2_kp_name" {
   description = "EC2 key pair name"
   nullable    = false
   type        = string
+}
+
+variable "vetta_vpc_id" {
+  description = "Vetta VPC ID"
+  nullable    = false
+  type        = string
+}
+
+variable "allowed_ssh_ips" {
+  description = "List of IPs allowed to SSH"
+  type        = list(string)
+  nullable    = false
 }
