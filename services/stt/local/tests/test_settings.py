@@ -73,10 +73,10 @@ class TestServiceConfig:
         assert cfg.is_unix_socket is False
         assert cfg.socket_path is None
 
-    # ── Config Loading ────────────────────────────────────────────
-
 
 class TestConfigLoading:
+    """Verify TOML config file loading and parsing."""
+
     def test_loads_valid_config_model(self, minimal_config):
         s = load_settings(minimal_config)
         assert s.model.size == "small"
@@ -160,7 +160,7 @@ class TestEnvOverrides:
         assert s.concurrency.cpu_threads != 2
 
     def test_env_override_does_not_affect_other_fields(
-        self, minimal_config, monkeypatch
+            self, minimal_config, monkeypatch
     ):
         """Changing one field must not bleed into unrelated fields."""
         monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
@@ -175,6 +175,7 @@ class TestEnvOverrides:
 
 
 class TestDeviceResolution:
+
     def test_explicit_cpu_passes_through(self):
         result = _resolve_device("cpu")
         assert result == "cpu"
@@ -227,8 +228,8 @@ class TestComputeTypeResolution:
 
     def test_auto_cuda_nvidia_smi_failure_defaults_to_float16(self):
         with patch(
-            "settings.subprocess.check_output",
-            side_effect=FileNotFoundError("nvidia-smi not found"),
+                "settings.subprocess.check_output",
+                side_effect=FileNotFoundError("nvidia-smi not found"),
         ):
             result = _resolve_compute_type("auto", "cuda")
         assert result == "float16"
@@ -240,6 +241,7 @@ class TestComputeTypeResolution:
 
 
 class TestCpuThreadResolution:
+
     def test_explicit_value_passes_through(self):
         assert _resolve_cpu_threads(4) == 4
         assert _resolve_cpu_threads(1) == 1
@@ -273,6 +275,7 @@ class TestMaxWorkersResolution:
 
 
 class TestArchDetection:
+
     @pytest.mark.parametrize(
         "raw, expected",
         [

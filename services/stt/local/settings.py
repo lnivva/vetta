@@ -26,7 +26,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://") :]
+            return self.address[len("unix://"):]
         return None
 
 

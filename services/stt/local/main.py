@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 import signal
+
 from concurrent import futures
 from pathlib import Path
 
@@ -64,6 +65,7 @@ def serve(config_path: str):
     )
 
     if settings.service.is_unix_socket:
+        assert socket_path is not None  # Guaranteed by is_unix_socket
         server.add_insecure_port(address)
         server.start()
         os.chmod(socket_path, 0o600)
