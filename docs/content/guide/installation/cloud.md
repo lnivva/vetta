@@ -89,10 +89,10 @@ terraform apply
 After `terraform apply` completes, the public IP is printed as an output:
 
 ```text
-Apply complete! Resources: 1 added, 0 changed, 0 destroyed.  
-  
+Apply complete! Resources: <n> added, 0 changed, 0 destroyed.  
+
 Outputs:  
-  
+
 public_ip = "44.230.XXX.XXX"  
 ```
 

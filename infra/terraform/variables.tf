@@ -20,4 +20,24 @@ variable "allowed_ssh_ips" {
   description = "List of IPs allowed to SSH"
   type        = list(string)
   nullable    = false
+
+  validation {
+    condition = length(var.allowed_ssh_ips) > 0 && alltrue([
+      for cidr in var.allowed_ssh_ips : can(cidrhost(cidr, 0))
+    ])
+    error_message = "allowed_ssh_ips must be a non-empty list of valid CIDR blocks."
+  }
+}
+
+variable "allowed_web_egress_cidrs" {
+  description = "List of IPs allowed to egress"
+  type        = list(string)
+  nullable    = false
+
+  validation {
+    condition = length(var.allowed_ssh_ips) > 0 && alltrue([
+      for cidr in var.allowed_ssh_ips : can(cidrhost(cidr, 0))
+    ])
+    error_message = "allowed_web_egress_cidrs must be a non-empty list of valid CIDR blocks."
+  }
 }

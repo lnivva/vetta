@@ -316,7 +316,7 @@ enabled = false
 
 ```toml
 [service]
-address = "0.0.0.0:50051"
+address = "127.0.0.1:50051"
 
 [model]
 device = "cuda"
@@ -351,21 +351,4 @@ cpu_threads = 4
 enabled = true
 hf_token = ""  # use WHISPER_DIARIZATION_HF_TOKEN env var
 device = "mps"
-```
-
-### Remote GPU with CLI on a separate machine
-
-```toml
-[service]
-address = "0.0.0.0:50051"  # TCP — accessible from other hosts
-
-[model]
-device = "cuda"
-compute_type = "float16"
-size = "large-v3"
-
-[diarization]
-enabled = true
-hf_token = ""
-device = "cuda"
 ```

@@ -48,6 +48,11 @@ data "aws_subnet" "vetta_public" {
     name   = "tag:Name"
     values = ["vetta-subnet-public1-us-west-2a"]
   }
+
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.vetta_vpc.id]
+  }
 }
 
 # -------------------------------------------------------------------
@@ -60,6 +65,10 @@ resource "aws_security_group" "vetta_server_security_group" {
   tags = {
     Name = "vetta_security_group"
   }
+
+  revoke_rules_on_delete = true
+
+
 }
 
 resource "aws_security_group_rule" "allow_ssh" {
@@ -77,7 +86,7 @@ resource "aws_security_group_rule" "https" {
   from_port         = 443
   to_port           = 443
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
+  cidr_blocks       = var.allowed_web_egress_cidrs
   security_group_id = aws_security_group.vetta_server_security_group.id
   description       = "Allow HTTPS outbound traffic"
 }
@@ -87,9 +96,29 @@ resource "aws_security_group_rule" "http" {
   from_port         = 80
   to_port           = 80
   protocol          = "tcp"
-  cidr_blocks       = ["0.0.0.0/0"]
+  cidr_blocks       = var.allowed_web_egress_cidrs
   security_group_id = aws_security_group.vetta_server_security_group.id
   description       = "Allow HTTP outbound traffic"
+}
+
+resource "aws_security_group_rule" "dns_udp" {
+  type              = "egress"
+  from_port         = 53
+  to_port           = 53
+  protocol          = "udp"
+  cidr_blocks       = [format("%s/32", cidrhost(data.aws_vpc.vetta_vpc.cidr_block, 2))]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow DNS (UDP) to VPC resolver"
+}
+
+resource "aws_security_group_rule" "dns_tcp" {
+  type              = "egress"
+  from_port         = 53
+  to_port           = 53
+  protocol          = "tcp"
+  cidr_blocks       = [format("%s/32", cidrhost(data.aws_vpc.vetta_vpc.cidr_block, 2))]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow DNS (TCP) to VPC resolver"
 }
 
 resource "aws_instance" "vetta_ec2" {

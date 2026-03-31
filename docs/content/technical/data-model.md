@@ -192,10 +192,11 @@ clusters (`Speaker 0`, `Speaker 1`, …). It knows *when* speakers change but no
 
 ### How It Fits in the Pipeline
 
-Diarization runs after transcription. The raw outputs are:
+Diarization does not persist a standalone `diarization.segments` structure. Instead, its output is directly materialized
+into:
 
-- **Transcription** → timestamped text segments (what was said, when)
-- **Diarization** → timestamped speaker segments (who spoke, when)
+- `transcript.segments[].speaker_id` (time-aligned speaker attribution)
+- `speakers` (speaker registry and metadata)
 
 These are aligned by timestamp overlap to produce the final transcript segments, where each segment carries both `text`
 and a `speaker_id`.
@@ -542,14 +543,14 @@ ingested → transcribed → diarized → chunked → processed
                                              ↘ failed
 ```
 
-| Status        | Meaning                                                                                                    |
-|---------------|------------------------------------------------------------------------------------------------------------|
-| `ingested`    | Audio file received and stored                                                                             |
-| `transcribed` | Whisper transcription complete; `transcript.segments` populated                                            |
-| `diarized`    | Speaker diarization complete; `diarization.segments` and `speakers` populated, transcript segments aligned |
-| `chunked`     | Dialogue turns extracted; `earnings_chunks` documents created                                              |
-| `processed`   | Embeddings generated and written to chunks                                                                 |
-| `failed`      | An error occurred; check logs for the failed stage                                                         |
+| Status        | Meaning                                                                                            |
+|---------------|----------------------------------------------------------------------------------------------------|
+| `ingested`    | Audio file received and stored                                                                     |
+| `transcribed` | Whisper transcription complete; `transcript.segments` populated                                    |
+| `diarized`    | Speaker diarization complete; `speakers` populated and `transcript.segments[].speaker_id` assigned |
+| `chunked`     | Dialogue turns extracted; `earnings_chunks` documents created                                      |
+| `processed`   | Embeddings generated and written to chunks                                                         |
+| `failed`      | An error occurred; check logs for the failed stage                                                 |
 
 ## Context Window Design
 
@@ -577,10 +578,10 @@ The `token_count` field enables precise context window budgeting when assembling
 
 ## Extensibility
 
-| Extension                       | Approach                                                                                                                     |
-|---------------------------------|------------------------------------------------------------------------------------------------------------------------------|
-| **Multi-tenancy**               | Add a `tenant_id` field to both collections and include it as a `filter` field in both search index definitions              |
-| **New embedding model**         | Write new `earnings_chunks` documents with the updated `model_version`; query by `model_version` to track migration progress |
-| **Different chunking strategy** | Drop and recreate `earnings_chunks`; `earnings_calls` remains unchanged                                                      |
-| **New diarization model**       | Rerun diarization, update `diarization.segments`, re-align transcript, re-resolve speakers. Source audio is unchanged.       |
-| **Additional metadata**         | Add fields to `earnings_chunks` and register them as `filter` fields in the relevant search index                            |
+| Extension                       | Approach                                                                                                                                   |
+|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| **Multi-tenancy**               | Add a `tenant_id` field to both collections and include it as a `filter` field in both search index definitions                            |
+| **New embedding model**         | Write new `earnings_chunks` documents with the updated `model_version`; query by `model_version` to track migration progress               |
+| **Different chunking strategy** | Drop and recreate `earnings_chunks`; `earnings_calls` remains unchanged                                                                    |
+| **New diarization model**       | Rerun diarization, update `transcript.segments[].speaker_id`, and re-resolve the `speakers` registry if needed. Source audio is unchanged. |
+| **Additional metadata**         | Add fields to `earnings_chunks` and register them as `filter` fields in the relevant search index                                          |

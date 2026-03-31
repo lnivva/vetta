@@ -10,7 +10,7 @@ VENV_SENTINEL = $(VENV_DIR)/.sentinel
 all: proto
 
 # ── Normal setup (fast, incremental) ────────────────────────────────
-$(VENV_SENTINEL): pyproject.toml
+$(VENV_SENTINEL): pyproject.toml uv.lock
 	@echo "Syncing venv with uv..."
 	uv sync
 	@touch $(VENV_SENTINEL)

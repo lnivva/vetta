@@ -24,7 +24,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://") :]
+            return self.address[len("unix://"):]
         return None
 
 
@@ -250,7 +250,7 @@ def _env(section: str, key: str, fallback: str) -> str: ...
 
 
 def _env(
-    section: str, key: str, fallback: str | bool | int | float
+        section: str, key: str, fallback: str | bool | int | float
 ) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
@@ -328,11 +328,17 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     if raw_address is None and "socket_path" in svc:
         raw_address = f"unix://{svc['socket_path']}"
 
-    resolved_address = _env(
-        "service",
-        "address",
-        raw_address or "unix:///tmp/whisper.sock",
-    )
+    legacy_socket_path = os.environ.get("WHISPER_SERVICE_SOCKET_PATH")
+    if "WHISPER_SERVICE_ADDRESS" in os.environ:
+        resolved_address = _env(
+            "service",
+            "address",
+            raw_address or "unix:///tmp/whisper.sock",
+        )
+    elif legacy_socket_path:
+        resolved_address = f"unix://{legacy_socket_path}"
+    else:
+        resolved_address = raw_address or "unix:///tmp/whisper.sock"
 
     settings = Settings(
         service=ServiceConfig(
