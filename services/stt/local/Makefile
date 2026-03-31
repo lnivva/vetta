@@ -2,14 +2,33 @@ PROTO_DIR = ../../../proto
 PROTO_OUT = .
 
 PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
+VENV_DIR = .venv
+VENV_SENTINEL = $(VENV_DIR)/.sentinel
 
-.PHONY: all clean proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check
+.PHONY: all clean proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv
 
 all: proto
 
-clean: clean-proto
+# ── Normal setup (fast, incremental) ────────────────────────────────
+$(VENV_SENTINEL): pyproject.toml
+	@echo "Syncing venv with uv..."
+	uv sync
+	@touch $(VENV_SENTINEL)
 
-proto: clean-proto
+venv: $(VENV_SENTINEL)
+
+# ── Nuclear option (full rebuild) ───────────────────────────────────
+clean-venv:
+	@echo "Removing venv entirely..."
+	rm -rf $(VENV_DIR)
+
+fresh-venv: clean-venv $(VENV_SENTINEL)
+	@echo "Fresh venv created."
+
+clean: clean-proto clean-venv
+
+# ── Protobuf ─────────────────────────────────────────────────────────
+proto: clean-proto $(VENV_SENTINEL)
 	@echo "Generating protobuf/gRPC code..."
 	uv run python -m grpc_tools.protoc \
 	   -I $(PROTO_DIR) \
@@ -36,17 +55,21 @@ proto-check:
 	@echo "Checking generated files..."
 	@test -n "$$(find . -name '*_pb2.py')" || (echo "No proto files generated!" && exit 1)
 
-setup: proto
-	uv sync
+# ── Dev commands ─────────────────────────────────────────────────────
+setup: $(VENV_SENTINEL) proto
 
-format:
+format: $(VENV_SENTINEL)
 	uv run ruff format .
 
-test:
+test: $(VENV_SENTINEL)
 	uv run pytest -v
 
-test-unit:
+test-unit: $(VENV_SENTINEL)
 	uv run pytest tests/test_settings.py -v
 
-test-integration:
+test-integration: $(VENV_SENTINEL)
 	uv run pytest tests/test_integration.py -v
+
+# ── Cleanup ──────────────────────────────────────────────────────────
+clean: clean-proto
+	rm -rf $(VENV_DIR)
