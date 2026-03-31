@@ -34,8 +34,8 @@ Whisper inference.
 A reference Terraform module is provided in `infra/terraform/`. The module provisions an EC2 instance with its own
 security group and attaches the init script as user data.
 
-The init script that runs on first boot handles system dependencies including NVIDIA drivers, Rust, uv, protoc, and
-ffmpeg, so you can skip the manual Linux installation steps above.
+The init script runs automatically on first boot and installs all system dependencies (NVIDIA drivers, Rust, uv, protoc,
+ffmpeg), so there are no manual installation steps — just wait for it to finish and verify.
 
 ### Prerequisites
 
@@ -57,7 +57,7 @@ ffmpeg, so you can skip the manual Linux installation steps above.
 
 ### Deploy
 
-```bash  
+```bash
 cd infra/terraform  
 terraform init  
 terraform apply \  
@@ -70,7 +70,7 @@ terraform apply \
 Or create a `terraform.tfvars` file to avoid passing flags every time:
 
 ```hcl
-# infra/terraform/terraform.tfvars
+# infra/terraform/terraform.tfvars  
 
 instance_type = "g6.xlarge"
 ec2_kp_name   = "my-key-pair"
@@ -78,39 +78,64 @@ vetta_vpc_id  = "vpc-0abc1234def56789a"
 allowed_ssh_ips = ["203.0.113.10/32"]  
 ```
 
-```bash  
+```bash
 cd infra/terraform  
 terraform init  
 terraform apply  
 ```
 
+### Post-Deploy
+
+After `terraform apply` completes, the public IP is printed as an output:
+
+```text
+Apply complete! Resources: 1 added, 0 changed, 0 destroyed.  
+  
+Outputs:  
+  
+public_ip = "44.230.XXX.XXX"  
+```
+
+You can retrieve it again at any time with:
+
+```bash
+terraform output public_ip  
+```
+
+SSH into the instance:
+
+```bash
+ssh -i ~/.ssh/<your-key-pair-name>.pem ubuntu@$(terraform output -raw public_ip)  
+```
+
+The init script may take several minutes to complete on first boot (driver installation, package downloads). Wait for
+cloud-init to finish before using the instance:
+
+```bash
+cloud-init status --wait  
+```
+
+Once it reports `status: done`, verify that everything was installed correctly:
+
+```bash  
+rustc --version  
+uv --version  
+protoc --version  
+ffmpeg -version  
+nvidia-smi        # Should show your GPU if on a GPU instance  
+```
+
 ::: tip  
-The module does not output the public IP directly. After `terraform apply`, retrieve it with:
+If you need to debug a failed init, check the full cloud-init log:
 
-```bash  
-aws ec2 describe-instances \  
-  --filters "Name=tag:Name,Values=vetta-server-1" \  
-  --query "Reservations[].Instances[].PublicIpAddress" \  
-  --output text --profile mongo  
-```
-
-Then SSH in:
-
-```bash  
-ssh -i ~/.ssh/<your-key-pair-name>.pem ubuntu@<public-ip>  
-```
-
-The init script may take several minutes to complete on first boot (driver installation, package downloads). You can
-monitor progress with:
-
-```bash  
+```bash
 tail -f /var/log/cloud-init-output.log  
 ```
 
-Check Cloud Init status:
+:::
 
-```bash  
-cloud-init status  
-```  
-
-:::  
+::: warning  
+`/etc/environment` is readable by all users on the instance. For production deployments, prefer injecting secrets
+through **AWS Secrets Manager**, **SSM Parameter Store**, or your CI/CD pipeline rather than writing credentials to
+disk.  
+:::
