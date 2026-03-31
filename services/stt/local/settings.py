@@ -4,9 +4,7 @@ import subprocess
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
-
-# ── Types ─────────────────────────────────────────────────────────────────────
+from typing import Literal, overload
 
 Device = Literal["cuda", "cpu"]
 ComputeType = Literal["float16", "int8_float16", "int8", "float32"]
@@ -26,7 +24,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://"):]
+            return self.address[len("unix://") :]
         return None
 
 
@@ -76,9 +74,6 @@ class Settings:
     inference: InferenceConfig
     concurrency: ConcurrencyConfig
     diarization: DiarizationConfig
-
-
-# ── Hardware Detection ─────────────────────────────────────────────────────────
 
 
 def _detect_arch() -> str:
@@ -238,10 +233,25 @@ def _resolve_max_workers(requested: int, device: Device) -> int:
     return 1 if device == "cuda" else 2
 
 
-# ── Env Overrides ──────────────────────────────────────────────────────────────
+@overload
+def _env(section: str, key: str, fallback: bool) -> bool: ...
 
 
-def _env(section: str, key: str, fallback):
+@overload
+def _env(section: str, key: str, fallback: int) -> int: ...
+
+
+@overload
+def _env(section: str, key: str, fallback: float) -> float: ...
+
+
+@overload
+def _env(section: str, key: str, fallback: str) -> str: ...
+
+
+def _env(
+    section: str, key: str, fallback: str | bool | int | float
+) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
 
@@ -264,9 +274,6 @@ def _env(section: str, key: str, fallback):
     if isinstance(fallback, float):
         return float(val)
     return val
-
-
-# ── Loader ─────────────────────────────────────────────────────────────────────
 
 
 def load_settings(config_path: str | Path = "config.toml") -> Settings:
@@ -297,21 +304,21 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     dia = raw.get("diarization", {})
 
     # --- Device + compute resolution ---
-    device = _resolve_device(_env("model", "device", mdl.get("device", "auto")))
+    device = _resolve_device(_env("model", "device", str(mdl.get("device", "auto"))))
     compute_type = _resolve_compute_type(
-        _env("model", "compute_type", mdl.get("compute_type", "auto")),
+        _env("model", "compute_type", str(mdl.get("compute_type", "auto"))),
         device,
     )
     cpu_threads = _resolve_cpu_threads(
-        _env("concurrency", "cpu_threads", con.get("cpu_threads", 0))
+        _env("concurrency", "cpu_threads", int(con.get("cpu_threads", 0)))
     )
     max_workers = _resolve_max_workers(
-        _env("concurrency", "max_workers", con.get("max_workers", 0)),
+        _env("concurrency", "max_workers", int(con.get("max_workers", 0))),
         device,
     )
 
     # --- Diarization device resolution ---
-    dia_device_raw = _env("diarization", "device", dia.get("device", "auto"))
+    dia_device_raw = _env("diarization", "device", str(dia.get("device", "auto")))
     if dia_device_raw == "auto":
         dia_device = device
     else:
@@ -320,66 +327,78 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     settings = Settings(
         service=ServiceConfig(
             address=_env(
-                "service", "address", svc.get("address", "unix:///tmp/whisper.sock")
+                "service",
+                "address",
+                str(svc.get("address", "unix:///tmp/whisper.sock")),
             ),
-            log_level=_env("service", "log_level", svc.get("log_level", "info")),
+            log_level=_env("service", "log_level", str(svc.get("log_level", "info"))),
             max_audio_size_mb=_env(
-                "service", "max_audio_size_mb", svc.get("max_audio_size_mb", 100)
+                "service", "max_audio_size_mb", int(svc.get("max_audio_size_mb", 100))
             ),
         ),
         model=ModelConfig(
-            size=_env("model", "size", mdl.get("size", "large-v3")),
+            size=_env("model", "size", str(mdl.get("size", "large-v3"))),
             download_dir=_env(
                 "model",
                 "download_dir",
-                mdl.get("download_dir", "/var/lib/whisper/models"),
+                str(mdl.get("download_dir", "/var/lib/whisper/models")),
             ),
             device=device,
             compute_type=compute_type,
         ),
         inference=InferenceConfig(
-            beam_size=_env("inference", "beam_size", inf.get("beam_size", 5)),
-            vad_filter=_env("inference", "vad_filter", inf.get("vad_filter", True)),
+            beam_size=_env("inference", "beam_size", int(inf.get("beam_size", 5))),
+            vad_filter=_env(
+                "inference", "vad_filter", bool(inf.get("vad_filter", True))
+            ),
             vad_min_silence_ms=_env(
-                "inference", "vad_min_silence_ms", inf.get("vad_min_silence_ms", 500)
+                "inference",
+                "vad_min_silence_ms",
+                int(inf.get("vad_min_silence_ms", 500)),
             ),
             no_speech_threshold=_env(
-                "inference", "no_speech_threshold", inf.get("no_speech_threshold", 0.6)
+                "inference",
+                "no_speech_threshold",
+                float(inf.get("no_speech_threshold", 0.6)),
             ),
             log_prob_threshold=_env(
-                "inference", "log_prob_threshold", inf.get("log_prob_threshold", -1.0)
+                "inference",
+                "log_prob_threshold",
+                float(inf.get("log_prob_threshold", -1.0)),
             ),
             compression_ratio_threshold=_env(
                 "inference",
                 "compression_ratio_threshold",
-                inf.get("compression_ratio_threshold", 2.4),
+                float(inf.get("compression_ratio_threshold", 2.4)),
             ),
             word_timestamps=_env(
-                "inference", "word_timestamps", inf.get("word_timestamps", True)
+                "inference", "word_timestamps", bool(inf.get("word_timestamps", True))
             ),
             initial_prompt=_env(
-                "inference", "initial_prompt", inf.get("initial_prompt", "")
+                "inference", "initial_prompt", str(inf.get("initial_prompt", ""))
             ),
         ),
         concurrency=ConcurrencyConfig(
             max_workers=max_workers,
             cpu_threads=cpu_threads,
-            num_workers=_env("concurrency", "num_workers", con.get("num_workers", 1)),
+            num_workers=_env(
+                "concurrency", "num_workers", int(con.get("num_workers", 1))
+            ),
         ),
         diarization=DiarizationConfig(
-            enabled=_env("diarization", "enabled", dia.get("enabled", False)),
-            hf_token=_env("diarization", "hf_token", dia.get("hf_token", "")),
+            enabled=_env("diarization", "enabled", bool(dia.get("enabled", False))),
+            hf_token=_env("diarization", "hf_token", str(dia.get("hf_token", ""))),
             model=_env(
                 "diarization",
                 "model",
-                dia.get("model", "pyannote/speaker-diarization-3.1"),
+                str(dia.get("model", "pyannote/speaker-diarization-3.1")),
             ),
             device=dia_device,
             min_speakers=_env(
-                "diarization", "min_speakers", dia.get("min_speakers", 0)
+                "diarization", "min_speakers", int(dia.get("min_speakers", 0))
             ),
             max_speakers=_env(
-                "diarization", "max_speakers", dia.get("max_speakers", 0)
+                "diarization", "max_speakers", int(dia.get("max_speakers", 0))
             ),
         ),
     )

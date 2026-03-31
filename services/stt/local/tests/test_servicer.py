@@ -34,7 +34,9 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
     inference_defaults.update(inference_overrides)
     return Settings(
         service=ServiceConfig(
-            address=f"unix://{tmp_dir / 't.sock'}", log_level="info", max_audio_size_mb=10
+            address=f"unix://{tmp_dir / 't.sock'}",
+            log_level="info",
+            max_audio_size_mb=10,
         ),
         model=ModelConfig(
             size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"
@@ -104,7 +106,7 @@ def _stub_preprocessor(servicer):
 
 
 def _prepare_servicer(
-        servicer, audio_input="test.mp3", log_source="test.mp3", source_type="path"
+    servicer, audio_input="test.mp3", log_source="test.mp3", source_type="path"
 ):
     """Wire up both resolver and preprocessor stubs for a standard test."""
     _stub_resolve(servicer, audio_input, log_source, source_type)
@@ -147,7 +149,7 @@ class TestWhisperServicer:
         assert call_kwargs["vad_parameters"]["min_silence_duration_ms"] == 500
 
     def test_audio_data_payload_flows_through_preprocessor(
-            self, servicer, mock_whisper_model
+        self, servicer, mock_whisper_model
     ):
         """
         Verifies that for a 'data' payload the resolver's output is handed
@@ -187,7 +189,7 @@ class TestWhisperServicer:
         assert model_audio_arg is preprocessed_audio
 
     def test_audio_uri_payload_flows_through_preprocessor(
-            self, servicer, mock_whisper_model
+        self, servicer, mock_whisper_model
     ):
         """
         Verifies that for a 'uri' payload the resolver's output is handed
