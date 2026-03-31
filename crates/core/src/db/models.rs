@@ -1,5 +1,5 @@
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
 /// Top-level earnings call document — source of truth.

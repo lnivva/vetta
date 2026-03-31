@@ -24,7 +24,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://"):]
+            return self.address[len("unix://") :]
         return None
 
 
@@ -250,7 +250,7 @@ def _env(section: str, key: str, fallback: str) -> str: ...
 
 
 def _env(
-        section: str, key: str, fallback: str | bool | int | float
+    section: str, key: str, fallback: str | bool | int | float
 ) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
