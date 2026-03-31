@@ -36,7 +36,7 @@ variable "allowed_web_egress_cidrs" {
 
   validation {
     condition = length(var.allowed_ssh_ips) > 0 && alltrue([
-      for cidr in var.allowed_ssh_ips : can(cidrhost(cidr, 0))
+      for cidr in var.allowed_web_egress_cidrs : can(cidrhost(cidr, 0))
     ])
     error_message = "allowed_web_egress_cidrs must be a non-empty list of valid CIDR blocks."
   }
