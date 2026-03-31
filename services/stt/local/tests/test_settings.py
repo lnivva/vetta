@@ -1,9 +1,6 @@
+import pytest
 import shutil
 from pathlib import Path
-from unittest.mock import patch
-
-import pytest
-
 from settings import (
     ServiceConfig,
     load_settings,
@@ -13,6 +10,7 @@ from settings import (
     _resolve_cpu_threads,
     _resolve_max_workers,
 )
+from unittest.mock import patch
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -150,17 +148,15 @@ class TestEnvOverrides:
         s = load_settings(minimal_config)
         # TOML says 0.6, env says 0.9 — env must win
         assert s.inference.no_speech_threshold == pytest.approx(0.9)
-        assert s.inference.no_speech_threshold != pytest.approx(0.6)
 
     def test_env_overrides_int(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_CONCURRENCY_CPU_THREADS", "16")
         s = load_settings(minimal_config)
         # TOML says 2, env says 16 — env must win
         assert s.concurrency.cpu_threads == 16
-        assert s.concurrency.cpu_threads != 2
 
     def test_env_override_does_not_affect_other_fields(
-        self, minimal_config, monkeypatch
+            self, minimal_config, monkeypatch
     ):
         """Changing one field must not bleed into unrelated fields."""
         monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
@@ -181,8 +177,9 @@ class TestDeviceResolution:
 
     def test_explicit_cuda_passes_through(self):
         """Explicit 'cuda' is returned even if CUDA isn't available."""
-        result = _resolve_device("cuda")
-        assert result == "cuda"
+        with patch("settings._cuda_available", return_value=False):
+            result = _resolve_device("cuda")
+            assert result == "cuda"
 
     def test_auto_selects_cuda_when_available(self):
         with patch("settings._cuda_available", return_value=True):
@@ -227,8 +224,8 @@ class TestComputeTypeResolution:
 
     def test_auto_cuda_nvidia_smi_failure_defaults_to_float16(self):
         with patch(
-            "settings.subprocess.check_output",
-            side_effect=FileNotFoundError("nvidia-smi not found"),
+                "settings.subprocess.check_output",
+                side_effect=FileNotFoundError("nvidia-smi not found"),
         ):
             result = _resolve_compute_type("auto", "cuda")
         assert result == "float16"
@@ -251,7 +248,7 @@ class TestCpuThreadResolution:
     def test_auto_floors_at_one(self):
         with patch("settings._physical_core_count", return_value=1):
             result = _resolve_cpu_threads(0)
-            assert result >= 1
+            assert result == 1
 
     def test_auto_with_odd_core_count(self):
         """7 cores → 3 threads (integer division)."""

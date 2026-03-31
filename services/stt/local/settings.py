@@ -24,7 +24,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://") :]
+            return self.address[len("unix://"):]
         return None
 
 
@@ -250,7 +250,7 @@ def _env(section: str, key: str, fallback: str) -> str: ...
 
 
 def _env(
-    section: str, key: str, fallback: str | bool | int | float
+        section: str, key: str, fallback: str | bool | int | float
 ) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
@@ -324,13 +324,19 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     else:
         dia_device = _resolve_device(dia_device_raw)
 
+    raw_address = svc.get("address")
+    if raw_address is None and "socket_path" in svc:
+        raw_address = f"unix://{svc['socket_path']}"
+
+    resolved_address = _env(
+        "service",
+        "address",
+        raw_address or "unix:///tmp/whisper.sock",
+    )
+
     settings = Settings(
         service=ServiceConfig(
-            address=_env(
-                "service",
-                "address",
-                str(svc.get("address", "unix:///tmp/whisper.sock")),
-            ),
+            address=resolved_address,
             log_level=_env("service", "log_level", str(svc.get("log_level", "info"))),
             max_audio_size_mb=_env(
                 "service", "max_audio_size_mb", int(svc.get("max_audio_size_mb", 100))

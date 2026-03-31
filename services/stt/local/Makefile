@@ -5,7 +5,7 @@ PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 VENV_DIR = .venv
 VENV_SENTINEL = $(VENV_DIR)/.sentinel
 
-.PHONY: all clean proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv
+.PHONY: all proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv clean-venv fresh-venv
 
 all: proto
 
@@ -69,7 +69,3 @@ test-unit: $(VENV_SENTINEL)
 
 test-integration: $(VENV_SENTINEL)
 	uv run pytest tests/test_integration.py -v
-
-# ── Cleanup ──────────────────────────────────────────────────────────
-clean: clean-proto
-	rm -rf $(VENV_DIR)
