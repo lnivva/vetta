@@ -156,7 +156,7 @@ class TestEnvOverrides:
         assert s.concurrency.cpu_threads == 16
 
     def test_env_override_does_not_affect_other_fields(
-            self, minimal_config, monkeypatch
+        self, minimal_config, monkeypatch
     ):
         """Changing one field must not bleed into unrelated fields."""
         monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
@@ -224,8 +224,8 @@ class TestComputeTypeResolution:
 
     def test_auto_cuda_nvidia_smi_failure_defaults_to_float16(self):
         with patch(
-                "settings.subprocess.check_output",
-                side_effect=FileNotFoundError("nvidia-smi not found"),
+            "settings.subprocess.check_output",
+            side_effect=FileNotFoundError("nvidia-smi not found"),
         ):
             result = _resolve_compute_type("auto", "cuda")
         assert result == "float16"
