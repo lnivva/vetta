@@ -175,6 +175,9 @@ _DEFAULT_PUNCTUATION_MODEL = "kredor/punctuate-all"
 _SENTENCE_END_CHARS = {".", "!", "?"}
 _MAX_STITCH_GAP_SECONDS = 1.0
 _MAX_STITCH_WORDS = 200
+_STITCH_OUTPUT_KEYS = frozenset(
+    {"speaker_id", "start_time", "end_time", "text", "words"}
+)
 
 
 @dataclass
@@ -185,6 +188,7 @@ class _StitchBuffer:
     parts: list[str]
     word_count: int
     words: list[dict[str, Any]]
+    extra: dict[str, Any]
 
     def append(self, text: str, end_time: float, words: list[dict[str, Any]]) -> None:
         self.parts.append(text)
@@ -195,7 +199,19 @@ class _StitchBuffer:
     def text(self) -> str:
         return " ".join(self.parts)
 
-        # ============================================================================
+    def to_segment(self) -> dict[str, Any]:
+        """Emit a merged segment, preserving all extra metadata."""
+        seg: dict[str, Any] = {**self.extra}
+        seg.update(
+            {
+                "speaker_id": self.speaker_id,
+                "start_time": self.start_time,
+                "end_time": self.end_time,
+                "text": self.text(),
+                "words": self.words,
+            }
+        )
+        return seg
 
 
 # Configuration
@@ -218,6 +234,10 @@ class PostProcessorConfig:
 # ============================================================================
 # Post-processor
 # ============================================================================
+def _as_float(value: Any, default: float) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    return default
 
 
 class TranscriptPostProcessor:
@@ -238,23 +258,21 @@ class TranscriptPostProcessor:
         self._config = config or PostProcessorConfig()
         self._punctuator: Optional[Any] = None
         self._punct_available: Optional[bool] = None
-        self._extra_patterns = (
-            _compile_corrections(self._config.extra_corrections)
-            if self._config.extra_corrections
-            else []
-        )
+        merged_corrections = {**_RAW_CORRECTIONS, **self._config.extra_corrections}
+        self._extra_patterns = _compile_corrections(merged_corrections)
 
         # ------------------------------------------------------------------ #
 
     # Segment stitching
     # ------------------------------------------------------------------ #
 
-    def stitch_segments(self, segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    @staticmethod
+    def stitch_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """
         Merge adjacent segments when they are clearly parts of the same sentence.
 
-        Preserves nested word lists and all timing / speaker metadata through
-        the merge.
+        Preserves nested word lists, all timing / speaker metadata, and any
+        extra fields through the merge.
         """
         if not segments:
             return segments
@@ -267,10 +285,20 @@ class TranscriptPostProcessor:
             if not text:
                 continue
 
-            speaker = seg.get("speaker_id", seg.get("speaker", None))
-            start = float(seg.get("start_time", seg.get("start", 0.0)))
-            end = float(seg.get("end_time", seg.get("end", start)))
+            speaker = seg.get("speaker_id", seg.get("speaker"))
+
+            raw_start = seg.get("start_time", seg.get("start"))
+            start = _as_float(raw_start, 0.0)
+
+            raw_end = seg.get("end_time", seg.get("end"))
+            end = _as_float(raw_end, start)
+
             seg_words = list(seg.get("words", []))
+
+            extra = {k: v for k, v in seg.items() if k not in _STITCH_OUTPUT_KEYS}
+            extra.pop("speaker", None)
+            extra.pop("start", None)
+            extra.pop("end", None)
 
             if buffer is None:
                 buffer = _StitchBuffer(
@@ -280,6 +308,7 @@ class TranscriptPostProcessor:
                     parts=[text],
                     word_count=len(text.split()),
                     words=list(seg_words),
+                    extra=extra,
                 )
                 continue
 
@@ -287,23 +316,16 @@ class TranscriptPostProcessor:
             prev_text = buffer.parts[-1]
             prev_complete = prev_text[-1] in _SENTENCE_END_CHARS
 
+            next_word_count = len(text.split())
             if (
                 speaker == buffer.speaker_id
                 and gap <= _MAX_STITCH_GAP_SECONDS
                 and not prev_complete
-                and buffer.word_count <= _MAX_STITCH_WORDS
+                and buffer.word_count + next_word_count <= _MAX_STITCH_WORDS
             ):
                 buffer.append(text, end, seg_words)
             else:
-                stitched.append(
-                    {
-                        "speaker_id": buffer.speaker_id,
-                        "start_time": buffer.start_time,
-                        "end_time": buffer.end_time,
-                        "text": buffer.text(),
-                        "words": buffer.words,
-                    }
-                )
+                stitched.append(buffer.to_segment())
                 buffer = _StitchBuffer(
                     speaker_id=speaker,
                     start_time=start,
@@ -311,25 +333,13 @@ class TranscriptPostProcessor:
                     parts=[text],
                     word_count=len(text.split()),
                     words=list(seg_words),
+                    extra=extra,
                 )
 
         if buffer:
-            stitched.append(
-                {
-                    "speaker_id": buffer.speaker_id,
-                    "start_time": buffer.start_time,
-                    "end_time": buffer.end_time,
-                    "text": buffer.text(),
-                    "words": buffer.words,
-                }
-            )
+            stitched.append(buffer.to_segment())
 
         return stitched
-
-        # ------------------------------------------------------------------ #
-
-    # Text pipeline
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def normalize_whitespace(text: str) -> str:
@@ -337,8 +347,6 @@ class TranscriptPostProcessor:
 
     def correct_entities(self, text: str) -> str:
         for pattern, repl in self._extra_patterns:
-            text = pattern.sub(repl, text)
-        for pattern, repl in _GLOBAL_CORRECTIONS:
             text = pattern.sub(repl, text)
         return text
 
@@ -458,6 +466,9 @@ class TranscriptPostProcessor:
                 word_text = word.get("text", "")
                 if preserve_raw:
                     word["text_raw"] = word_text
-                word["text"] = self.process_text(word_text)
+                normalized_word = self.normalize_whitespace(word_text)
+                if self._config.enable_entity_correction:
+                    normalized_word = self.correct_entities(normalized_word)
+                word["text"] = normalized_word
 
         return segments

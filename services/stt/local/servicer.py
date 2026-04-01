@@ -311,20 +311,15 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         if diar_future is not None:
             try:
                 diarization = diar_future.result()
-            except _INFERENCE_ERRORS:
-                logger.exception("Diarization failed")
-                context.abort(
-                    grpc.StatusCode.INTERNAL,
-                    "Diarization failed",
-                )
-                return
             except Exception:
-                logger.exception("Diarization failed unexpectedly")
-                context.abort(
-                    grpc.StatusCode.INTERNAL,
-                    "Diarization failed",
-                )
-                return
+                logger.exception("Diarization failed")
+                if self._diarization_config.required:
+                    context.abort(
+                        grpc.StatusCode.INTERNAL,
+                        "Diarization failed",
+                    )
+                    return
+                diarization = None
 
                 # ── Phase 4: Apply diarization labels ────────
         if diarization is not None:

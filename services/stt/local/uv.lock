@@ -3097,10 +3097,8 @@ dependencies = [
     { name = "grpcio" },
     { name = "grpcio-tools" },
     { name = "psutil" },
-    { name = "pyannote-audio" },
     { name = "python-json-logger" },
     { name = "requests" },
-    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -3128,12 +3126,10 @@ requires-dist = [
     { name = "grpcio", specifier = "==1.78.0" },
     { name = "grpcio-tools", specifier = "==1.78.0" },
     { name = "psutil", specifier = "==7.2.2" },
-    { name = "pyannote-audio", specifier = "==4.0.4" },
-    { name = "pyannote-audio", marker = "extra == 'diarization'", specifier = ">=3.1" },
+    { name = "pyannote-audio", marker = "extra == 'diarization'", specifier = "==4.0.4" },
     { name = "python-json-logger", specifier = "==4.0.0" },
     { name = "requests", specifier = "==2.33.0" },
-    { name = "torch", specifier = "==2.10.0" },
-    { name = "torch", marker = "extra == 'diarization'", specifier = ">=2.2" },
+    { name = "torch", marker = "extra == 'diarization'", specifier = "==2.10.0" },
 ]
 provides-extras = ["diarization"]
 

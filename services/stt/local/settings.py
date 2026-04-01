@@ -434,6 +434,11 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
                 "max_speakers",
                 int(dia.get("max_speakers", 0)),
             ),
+            required=_env(
+                "diarization",
+                "required",
+                bool(dia.get("required", False)),
+            ),
         ),
         postprocessing=PostProcessingConfig(
             enabled=_env("postprocessing", "enabled", bool(pp.get("enabled", True))),
