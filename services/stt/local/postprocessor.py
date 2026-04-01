@@ -462,14 +462,14 @@ class TranscriptPostProcessor:
         for seg in segments:
             original = seg.get("text", "")
             if preserve_raw:
-                seg["text_raw"] = original
+                seg.setdefault("text_raw", original)
             seg["text"] = self.process_text(original)
 
             # ── Word-level text processing ──────────────────────────
             for word in seg.get("words", []):
                 word_text = word.get("text", "")
                 if preserve_raw:
-                    word["text_raw"] = word_text
+                    word.setdefault("text_raw", word_text)
                 normalized_word = self.normalize_whitespace(word_text)
                 if self._config.enable_entity_correction:
                     normalized_word = self.correct_entities(normalized_word)
