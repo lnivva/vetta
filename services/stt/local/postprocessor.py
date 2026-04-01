@@ -391,7 +391,11 @@ class TranscriptPostProcessor:
             if i == 0:
                 out.append(punct)
             else:
-                out.append(" ".join(punct.split()[_PUNCTUATION_OVERLAP_WORDS:]))
+                remainder = punct.split()[_PUNCTUATION_OVERLAP_WORDS:]
+                if remainder:
+                    out.append(" ".join(remainder))
+                elif i + _PUNCTUATION_OVERLAP_WORDS >= len(words):
+                    out.append(punct)
 
         return " ".join(out)
 
