@@ -15,6 +15,7 @@ from settings import (
     InferenceConfig,
     ConcurrencyConfig,
     DiarizationConfig,
+    PostProcessingConfig,
 )
 from speech import speech_pb2
 
@@ -50,6 +51,12 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
             hf_token="",
             enabled=False,
             device="cuda",
+        ),
+        postprocessing=PostProcessingConfig(
+            enabled=True,
+            punctuation=False,
+            entity_correction=True,
+            truecasing=True,
         ),
     )
 

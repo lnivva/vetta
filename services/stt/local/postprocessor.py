@@ -135,7 +135,7 @@ _RAW_CORRECTIONS: dict[str, str] = {
 
 
 def _compile_corrections(
-        raw: dict[str, str],
+    raw: dict[str, str],
 ) -> list[tuple[re.Pattern[str], str]]:
     """
     Compile correction rules into regex patterns sorted longest-first.
@@ -288,10 +288,10 @@ class TranscriptPostProcessor:
             prev_complete = prev_text[-1] in _SENTENCE_END_CHARS
 
             if (
-                    speaker == buffer.speaker_id
-                    and gap <= _MAX_STITCH_GAP_SECONDS
-                    and not prev_complete
-                    and buffer.word_count <= _MAX_STITCH_WORDS
+                speaker == buffer.speaker_id
+                and gap <= _MAX_STITCH_GAP_SECONDS
+                and not prev_complete
+                and buffer.word_count <= _MAX_STITCH_WORDS
             ):
                 buffer.append(text, end, seg_words)
             else:
@@ -378,7 +378,7 @@ class TranscriptPostProcessor:
         stride = _PUNCTUATION_CHUNK_WORDS - _PUNCTUATION_OVERLAP_WORDS
 
         for i in range(0, len(words), stride):
-            chunk = " ".join(words[i: i + _PUNCTUATION_CHUNK_WORDS])
+            chunk = " ".join(words[i : i + _PUNCTUATION_CHUNK_WORDS])
             punct = punctuator.restore_punctuation(chunk)
             if i == 0:
                 out.append(punct)
@@ -422,11 +422,11 @@ class TranscriptPostProcessor:
         return self.normalize_whitespace(text)
 
     def process_segments(
-            self,
-            segments: list[dict[str, Any]],
-            *,
-            preserve_raw: bool = True,
-            stitch: bool = True,
+        self,
+        segments: list[dict[str, Any]],
+        *,
+        preserve_raw: bool = True,
+        stitch: bool = True,
     ) -> list[dict[str, Any]]:
         """
         Process a list of transcript segments in place.
