@@ -15,6 +15,7 @@ from pathlib import Path
 
 import grpc
 from pythonjsonlogger.json import JsonFormatter
+from huggingface_hub import login
 
 from servicer import WhisperServicer
 from settings import load_settings
@@ -49,6 +50,17 @@ def serve(config_path: str):
     setup_logging()
 
     settings = load_settings(config_path)
+    if settings.diarization.hf_token:
+        login(
+            token=settings.diarization.hf_token,
+            add_to_git_credential=False,
+        )
+        logger.info("Authenticated with Hugging Face Hub")
+    else:
+        logger.warning(
+            "No Hugging Face token configured; requests will be unauthenticated"
+        )
+
     address = settings.service.address
     socket_path = settings.service.socket_path
 

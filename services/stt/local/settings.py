@@ -65,6 +65,15 @@ class DiarizationConfig:
     device: Device
     min_speakers: int  # 0 = auto
     max_speakers: int  # 0 = auto
+    required: bool = False
+
+
+@dataclass
+class PostProcessingConfig:
+    enabled: bool
+    punctuation: bool
+    entity_correction: bool
+    truecasing: bool
 
 
 @dataclass
@@ -74,6 +83,7 @@ class Settings:
     inference: InferenceConfig
     concurrency: ConcurrencyConfig
     diarization: DiarizationConfig
+    postprocessing: PostProcessingConfig
 
 
 def _detect_arch() -> str:
@@ -290,6 +300,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     Raises:
         FileNotFoundError: If the specified configuration file does not exist.
     """
+
     path = Path(config_path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path.resolve()}")
@@ -302,8 +313,9 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
     inf = raw.get("inference", {})
     con = raw.get("concurrency", {})
     dia = raw.get("diarization", {})
+    pp = raw.get("postprocessing", {})
 
-    # --- Device + compute resolution ---
+    # ── Device + compute resolution ──────────────────────────
     device = _resolve_device(_env("model", "device", str(mdl.get("device", "auto"))))
     compute_type = _resolve_compute_type(
         _env("model", "compute_type", str(mdl.get("compute_type", "auto"))),
@@ -317,13 +329,11 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         device,
     )
 
-    # --- Diarization device resolution ---
+    # ── Diarization device resolution ────────────────────────
     dia_device_raw = _env("diarization", "device", str(dia.get("device", "auto")))
-    if dia_device_raw == "auto":
-        dia_device = device
-    else:
-        dia_device = _resolve_device(dia_device_raw)
+    dia_device = device if dia_device_raw == "auto" else _resolve_device(dia_device_raw)
 
+    # ── Address resolution (backwards compatible) ───────────
     raw_address = svc.get("address")
     if raw_address is None and "socket_path" in svc:
         raw_address = f"unix://{svc['socket_path']}"
@@ -345,7 +355,9 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             address=resolved_address,
             log_level=_env("service", "log_level", str(svc.get("log_level", "info"))),
             max_audio_size_mb=_env(
-                "service", "max_audio_size_mb", int(svc.get("max_audio_size_mb", 100))
+                "service",
+                "max_audio_size_mb",
+                int(svc.get("max_audio_size_mb", 100)),
             ),
         ),
         model=ModelConfig(
@@ -384,17 +396,23 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
                 float(inf.get("compression_ratio_threshold", 2.4)),
             ),
             word_timestamps=_env(
-                "inference", "word_timestamps", bool(inf.get("word_timestamps", True))
+                "inference",
+                "word_timestamps",
+                bool(inf.get("word_timestamps", True)),
             ),
             initial_prompt=_env(
-                "inference", "initial_prompt", str(inf.get("initial_prompt", ""))
+                "inference",
+                "initial_prompt",
+                str(inf.get("initial_prompt", "")),
             ),
         ),
         concurrency=ConcurrencyConfig(
             max_workers=max_workers,
             cpu_threads=cpu_threads,
             num_workers=_env(
-                "concurrency", "num_workers", int(con.get("num_workers", 1))
+                "concurrency",
+                "num_workers",
+                int(con.get("num_workers", 1)),
             ),
         ),
         diarization=DiarizationConfig(
@@ -407,10 +425,28 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             ),
             device=dia_device,
             min_speakers=_env(
-                "diarization", "min_speakers", int(dia.get("min_speakers", 0))
+                "diarization",
+                "min_speakers",
+                int(dia.get("min_speakers", 0)),
             ),
             max_speakers=_env(
-                "diarization", "max_speakers", int(dia.get("max_speakers", 0))
+                "diarization",
+                "max_speakers",
+                int(dia.get("max_speakers", 0)),
+            ),
+        ),
+        postprocessing=PostProcessingConfig(
+            enabled=_env("postprocessing", "enabled", bool(pp.get("enabled", True))),
+            punctuation=_env(
+                "postprocessing", "punctuation", bool(pp.get("punctuation", True))
+            ),
+            entity_correction=_env(
+                "postprocessing",
+                "entity_correction",
+                bool(pp.get("entity_correction", True)),
+            ),
+            truecasing=_env(
+                "postprocessing", "truecasing", bool(pp.get("truecasing", True))
             ),
         ),
     )

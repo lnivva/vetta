@@ -37,4 +37,5 @@ message Word {
   float  end_time = 2;
   string text = 3;
   float  confidence = 4;
+  string speaker_id = 5;
 }

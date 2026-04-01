@@ -51,3 +51,9 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["speech", "speech.*"]
 ignore_errors = true
+
+[project.optional-dependencies]
+diarization = [
+    "torch>=2.2",
+    "pyannote.audio>=3.1",
+]

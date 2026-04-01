@@ -67,13 +67,26 @@ class DiarizationResult:
         Annotate transcript segments and nested words with speaker labels.
 
         Each segment and word dictionary is expected to contain `start` and
-        `end` keys. A `speaker` key will be added in-place.
+        `end` keys (or `start_time` and `end_time`).  A `speaker` (and
+        optionally `speaker_id`) key will be added in-place.
+
+        Supports both naming conventions so that raw Whisper-style dicts
+        (`start`/`end`) and servicer-normalised dicts (`start_time`/`end_time`)
+        are handled transparently.
         """
         for seg in segments:
-            seg["speaker"] = self.speaker_at(seg["start"], seg["end"])
+            seg_start = seg.get("start", seg.get("start_time", 0.0))
+            seg_end = seg.get("end", seg.get("end_time", seg_start))
+            speaker = self.speaker_at(seg_start, seg_end)
+            seg["speaker"] = speaker
+            seg["speaker_id"] = speaker
 
             for word in seg.get("words", []):
-                word["speaker"] = self.speaker_at(word["start"], word["end"])
+                w_start = word.get("start", word.get("start_time", 0.0))
+                w_end = word.get("end", word.get("end_time", w_start))
+                word_speaker = self.speaker_at(w_start, w_end)
+                word["speaker"] = word_speaker
+                word["speaker_id"] = word_speaker
 
         return segments
 
