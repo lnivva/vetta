@@ -118,46 +118,39 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         return options.num_speakers if options.HasField("num_speakers") else 0
 
     @staticmethod
-    def _whisper_segments_to_dicts(segments) -> list[dict[str, Any]]:
+    def _whisper_segment_to_dict(seg) -> dict[str, Any]:
+        """Convert a single faster-whisper segment into a canonical dict."""
+        word_list = [
+            {
+                "start": w.start,
+                "end": w.end,
+                "start_time": w.start,
+                "end_time": w.end,
+                "text": w.word,
+                "confidence": w.probability,
+                "speaker_id": "",
+            }
+            for w in (seg.words or [])
+        ]
+
+        return {
+            "start": seg.start,
+            "end": seg.end,
+            "start_time": seg.start,
+            "end_time": seg.end,
+            "text": seg.text,
+            "confidence": seg.avg_logprob,
+            "speaker_id": "",
+            "words": word_list,
+        }
+
+    @classmethod
+    def _whisper_segments_to_dicts(cls, segments) -> list[dict[str, Any]]:
         """
         Consume the faster-whisper segment generator and convert each
-        segment into a plain dictionary that is compatible with both
-        the post-processor and the diarization result helpers.
-
-        Keys use the servicer's canonical names (`start_time`, `end_time`,
-        `speaker_id`) **and** the short aliases (`start`, `end`) so that
-        both `DiarizationResult.assign_speakers` and
-        `TranscriptPostProcessor.process_segments` work without adaptation.
+        segment into a plain dictionary.
         """
-        results: list[dict[str, Any]] = []
-        for seg in segments:
-            word_list: list[dict[str, Any]] = []
-            for w in seg.words or []:
-                word_list.append(
-                    {
-                        "start": w.start,
-                        "end": w.end,
-                        "start_time": w.start,
-                        "end_time": w.end,
-                        "text": w.word,
-                        "confidence": w.probability,
-                        "speaker_id": "",
-                    }
-                )
-
-            results.append(
-                {
-                    "start": seg.start,
-                    "end": seg.end,
-                    "start_time": seg.start,
-                    "end_time": seg.end,
-                    "text": seg.text,
-                    "confidence": seg.avg_logprob,
-                    "speaker_id": "",
-                    "words": word_list,
-                }
-            )
-        return results
+        return [cls._whisper_segment_to_dict(seg) for seg in segments]
 
     @staticmethod
     def _seg_to_chunk(seg: dict[str, Any]) -> speech_pb2.TranscriptChunk:
@@ -182,17 +175,41 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     def Transcribe(self, request, context):
         """
-        Stream a transcription response for the provided audio request.
+        Process an audio request and stream transcript chunks to the client.
 
-        The full pipeline is:
-        1. Resolve & validate audio input.
-        2. Optionally run diarization (parallel-capable via executor).
-        3. Run Whisper transcription.
-        4. Collect all segments into dicts.
-        5. Apply diarization speaker labels (segment + word level).
-        6. Run full post-processing pipeline (stitching, entity
-           correction, punctuation, truecasing).
-        7. Yield protobuf chunks to the caller.
+        This method orchestrates the complete speech-to-text pipeline, dynamically
+        choosing between a low-latency streaming fast-path and a high-accuracy batch
+        path based on the requested features (diarization and post-processing).
+
+        Pipeline Stages:
+            1. Audio Resolution: Fetches, validates, and decodes the requested audio.
+            2. Parallel Execution (Optional): Kicks off speaker diarization in a background thread.
+            3. Whisper Inference: Transcribes the audio using the faster-whisper model.
+            4. Execution Routing:
+                - Fast Path: If diarization and post-processing are disabled, segments
+                  are yielded to the client immediately as Whisper generates them.
+                - Batch Path: If diarization or post-processing is enabled, the generator
+                  is exhausted, speaker labels are applied, and the text is refined
+                  (stitched, truecased, punctuated) before yielding the final chunks.
+
+        Args:
+            request: The gRPC request object containing the audio payload/URI and
+                transcription configuration options (e.g., language, diarization flag).
+            context (grpc.ServicerContext): The gRPC context used for managing the RPC
+                lifecycle, logging, and aborting on errors.
+
+        Yields:
+            speech_pb2.TranscriptChunk: Protobuf messages containing segment text,
+                start/end times, confidence scores, and word-level timestamps.
+
+        Raises:
+            grpc.RpcError: If the streaming connection to the client is lost.
+
+        Aborts (via context.abort):
+            INVALID_ARGUMENT (400): If the audio is unreadable, exceeds size limits,
+                or if diarization is requested by the client but disabled on the server.
+            INTERNAL (500): If model inference fails, diarization crashes (when marked
+                as strictly required), or an unexpected error occurs during streaming.
         """
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None
@@ -289,7 +306,24 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-        # ── Collect all Whisper segments ──────────────
+        # ── Fast Path vs Batch Path ───────────────────
+        requires_batching = diarize or (self._postprocessor is not None)
+
+        if not requires_batching:
+            # ── True Streaming Fast-Path ──────────────
+            try:
+                for seg in segments_iter:
+                    seg_dict = self._whisper_segment_to_dict(seg)
+                    yield self._seg_to_chunk(seg_dict)
+                return
+            except grpc.RpcError:
+                raise
+            except _INFERENCE_ERRORS:
+                logger.exception("Streaming failed")
+                context.abort(grpc.StatusCode.INTERNAL, "Streaming failed")
+                return
+
+        # ── Phase 3: Collect for Batch Processing ─────
         try:
             seg_dicts = self._whisper_segments_to_dicts(segments_iter)
         except _INFERENCE_ERRORS:
@@ -299,7 +333,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-        # ── Phase 3: Resolve diarization future ──────
+        # ── Phase 4: Resolve diarization future ───────
         diarization = None
         if diar_future is not None:
             try:
@@ -314,11 +348,11 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     return
                 diarization = None
 
-        # ── Phase 4: Apply diarization labels ────────
+        # ── Phase 5: Apply diarization labels ─────────
         if diarization is not None:
             diarization.assign_speakers(seg_dicts)
 
-        # ── Phase 5: Post-processing ─────────────────
+        # ── Phase 6: Post-processing ──────────────────
         if self._postprocessor:
             seg_dicts = self._postprocessor.process_segments(
                 seg_dicts,
@@ -326,7 +360,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 stitch=True,
             )
 
-        # ── Phase 6: Stream results ──────────────────
+        # ── Phase 7: Stream batched results ───────────
         try:
             for seg in seg_dicts:
                 yield self._seg_to_chunk(seg)

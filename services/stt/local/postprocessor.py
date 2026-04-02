@@ -257,7 +257,7 @@ class TranscriptPostProcessor:
             if not text:
                 continue
 
-            speaker = seg.get("speaker_id", seg.get("speaker"))
+            speaker = seg.get("speaker_id") or seg.get("speaker")
 
             raw_start = seg.get("start_time", seg.get("start"))
             start = _as_float(raw_start, 0.0)
@@ -288,8 +288,9 @@ class TranscriptPostProcessor:
             prev_complete = prev_text[-1] in _SENTENCE_END_CHARS
 
             next_word_count = len(text.split())
+            same_speaker = bool(speaker) and speaker == buffer.speaker_id
             if (
-                speaker == buffer.speaker_id
+                same_speaker
                 and gap <= _MAX_STITCH_GAP_SECONDS
                 and not prev_complete
                 and buffer.word_count + next_word_count <= _MAX_STITCH_WORDS

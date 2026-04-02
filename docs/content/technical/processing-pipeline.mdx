@@ -13,8 +13,10 @@ Every request follows the pipeline below. Some stages may run **in parallel** or
 1. **Resolve**: Determine the audio source (local path, inline bytes, or remote URI). Remote URIs are validated against SSRF rules, fetched with size limits, and validated before decoding.
 2. **Preprocess**: Decode audio and prepare model-specific inputs. Audio is normalized for Whisper inference, and if diarization is requested, a separate seekable input is prepared for the diarization pipeline.
 3. **Diarize (optional)**: Run speaker diarization to produce timestamped speaker labels. This stage is optional, configuration-driven, and lazily initialized. When enabled, diarization may execute in parallel with transcription.
-4. **Transcribe**: Run Whisper inference to produce timestamped segments (and optionally word-level timestamps). Segments are collected before downstream processing.
-5. **Post-process & Stream**: Apply speaker attribution, optional segment stitching, entity correction, punctuation, and truecasing, then stream `TranscriptChunk` messages back to the caller over gRPC.
+4. **Transcribe**: Run Whisper inference to produce timestamped segments (and optionally word-level timestamps).
+5. **Route & Stream**: Execution branches dynamically based on the requested features:
+ - **Streaming Fast-Path**: If diarization and full-context post-processing are disabled, the pipeline yields `TranscriptChunk` messages back to the caller immediately as Whisper generates them.
+ - **Batch Path**: If diarization or advanced post-processing (like sentence stitching or deep punctuation) is requested, the segment generator is exhausted. Speaker attribution and text corrections are applied to the full transcript, and then the finalized chunks are streamed to the caller.
 
 ## Transport
 

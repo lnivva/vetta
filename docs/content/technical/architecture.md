@@ -21,36 +21,39 @@ graph LR
 
 ## Speech-to-Text Pipeline
 
-The STT service implements a **streaming transcription pipeline**:
+The STT service implements a **dual-path transcription pipeline**:
 
 1. Audio resolution and validation (URL, upload, or inline audio)
 2. Audio preprocessing for inference
 3. Optional speaker diarization (lazy-loaded, configuration-driven)
 4. Whisper transcription (word-level timestamps supported)
-5. Speaker label assignment (segment- and word-level)
-6. Post-processing (stitching, entity correction, punctuation, truecasing)
-7. Streaming transcript chunks to the caller
+5. Execution Routing (Streaming vs. Batching)
+6. Speaker label assignment and post-processing (stitching, entity correction, truecasing)
+7. Yielding transcript chunks to the caller
 
-The service streams `TranscriptChunk` messages incrementally, enabling:
+To balance latency with accuracy, the service dynamically routes requests based on the required features:
 
-- Real-time progress
-- Bounded memory usage
-- Early indexing or consumption
-
-Diarization and post-processing are **optional** and can be enabled or disabled via configuration without changing the
-pipeline.
+- **Streaming Fast-Path**: If diarization and post-processing are disabled, the service yields `TranscriptChunk`
+  messages incrementally as soon as the Whisper model recognizes them. This ensures real-time progress reporting,
+  minimal latency, and bounded memory usage.
+- **Full-Context Batch Path**: If diarization or advanced post-processing (such as sentence stitching or neural
+  punctuation) is requested, the service must evaluate the transcript context as a whole. The pipeline exhausts the
+  transcription generator, applies labels/corrections across the full text, and then yields the batched chunks to the
+  caller.
 
 ## Storage
 
 Two collections with distinct responsibilities:
 
 - **`earnings_calls`** — One document per call. Immutable source of truth.
+
     - Full transcript (speaker-labeled, post-processed)
     - Speaker registry
     - Ingestion and processing metadata
     - No embeddings
 
 - **`earnings_chunks`** — One document per dialogue turn.
+
     - Search-optimized text
     - Embeddings
     - Denormalized metadata for filtering (speaker, call ID, timestamps)
@@ -70,13 +73,13 @@ See [Data Model](/technical/data-model) for schemas, field references, and index
 
 ## Key Decisions
 
-| Decision                   | Rationale                                                                                                |
-|----------------------------|----------------------------------------------------------------------------------------------------------|
-| gRPC-based STT service     | Clear contract, streaming support, language-agnostic clients                                             |
-| Streaming transcription    | Segments yield as recognized; enables progress reporting and early consumption                           |
-| Optional diarization       | Speaker labeling when available, graceful degradation when not                                           |
-| Post-processing pipeline   | Improves readability and normalization without affecting raw timing data                                 |
-| Event / chunk-based output | Core emits structured data; presentation is handled by consumers                                         |
-| Two-collection model       | Source transcripts and search chunks are separated so embeddings and chunking can evolve independently   |
-| Denormalized filters       | Metadata lives on chunks so search can filter without cross-collection joins                             |
-| Context windows on chunks  | Each chunk stores neighboring turns, giving rerankers and LLMs surrounding context without extra queries |
+| Decision                   | Rationale                                                                                                  |
+|----------------------------|------------------------------------------------------------------------------------------------------------|
+| gRPC-based STT service     | Clear contract, streaming support, language-agnostic clients                                               |
+| Dual-path Execution        | Provides true low-latency streaming when possible, while supporting full-context operations when requested |
+| Optional diarization       | Speaker labeling when available, graceful degradation when not                                             |
+| Post-processing pipeline   | Improves readability and normalization without affecting raw timing data                                   |
+| Event / chunk-based output | Core emits structured data; presentation is handled by consumers                                           |
+| Two-collection model       | Source transcripts and search chunks are separated so embeddings and chunking can evolve independently     |
+| Denormalized filters       | Metadata lives on chunks so search can filter without cross-collection joins                               |
+| Context windows on chunks  | Each chunk stores neighboring turns, giving rerankers and LLMs surrounding context without extra queries   |

@@ -199,7 +199,14 @@ If diarization is disabled or unavailable, transcripts are stored without speake
 
 ### Speaker Resolution
 
-*(unchanged — still accurate)*
+The `speakers` array maps raw diarization labels to identities. Resolution can be:
+
+- **Manual**: an operator assigns names after reviewing the transcript
+- **Heuristic**: pattern matching on introductions ("This is Dev Ittycheria, CEO of MongoDB")
+- **Automated**: speaker identification models (future)
+
+Until resolved, speakers remain as `Speaker 0`, `Speaker 1`, etc. with `role: "unknown"` and null identity fields. The
+pipeline does not block on resolution, chunking and embedding proceed with whatever speaker state exists.
 
 ### What Gets Stored
 
