@@ -12,6 +12,7 @@ This module coordinates the transcription flow:
 from __future__ import annotations
 
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Any
 
@@ -93,7 +94,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
         # ── Diarization ──────────────────────────────
         self._diarization_config = s.diarization
-        self.diarizer = None  # Lazy-initialized
+        self.diarizer = None
+        self._diarization_lock = threading.Lock()
 
         # ── Execution ────────────────────────────────
         self._executor = ThreadPoolExecutor(max_workers=2)
@@ -226,7 +228,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-        # ── Diarization flags ─────────────────────────
+        # ── Diarization flags & Lazy Initialization ───
         diarize = request.options.diarization
 
         if diarize:
@@ -238,33 +240,37 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 return
 
             if self.diarizer is None:
-                DiarizationPipeline, _ = _load_diarization()
+                with self._diarization_lock:
+                    if self.diarizer is None:
+                        DiarizationPipeline, _ = _load_diarization()
 
-                if DiarizationPipeline is None:
-                    if self._diarization_config.required:
-                        context.abort(
-                            grpc.StatusCode.INTERNAL,
-                            "Diarization requested but dependencies are not installed.",
-                        )
-                        return
+                        if DiarizationPipeline is None:
+                            if self._diarization_config.required:
+                                context.abort(
+                                    grpc.StatusCode.INTERNAL,
+                                    "Diarization requested but dependencies are not installed.",
+                                )
+                                return
 
-                    logger.warning(
-                        "Diarization requested but unavailable; "
-                        "continuing without speaker labels"
-                    )
-                    diarize = False
-                else:
-                    try:
-                        self.diarizer = DiarizationPipeline(self._diarization_config)
-                    except Exception:
-                        logger.exception("Failed to initialize diarization")
-                        if self._diarization_config.required:
-                            context.abort(
-                                grpc.StatusCode.INTERNAL,
-                                "Failed to initialize diarization",
+                            logger.warning(
+                                "Diarization requested but unavailable; "
+                                "continuing without speaker labels"
                             )
-                            return
-                        diarize = False
+                            diarize = False
+                        else:
+                            try:
+                                self.diarizer = DiarizationPipeline(
+                                    self._diarization_config
+                                )
+                            except Exception:
+                                logger.exception("Failed to initialize diarization")
+                                if self._diarization_config.required:
+                                    context.abort(
+                                        grpc.StatusCode.INTERNAL,
+                                        "Failed to initialize diarization",
+                                    )
+                                    return
+                                diarize = False
 
         # ── Preprocess ────────────────────────────────
         try:
@@ -280,12 +286,17 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         diar_future: Future | None = None
         if diarize and diar_input is not None and self.diarizer is not None:
             num_speakers = self._get_num_speakers(request.options)
-            diar_future = self._executor.submit(
-                self.diarizer.run,
-                diar_input,
-                min_speakers=num_speakers,
-                max_speakers=num_speakers,
-            )
+
+            def _run_diarizer_safely():
+                # Prevent concurrent GPU inference collisions
+                with self._diarization_lock:
+                    return self.diarizer.run(
+                        diar_input,
+                        min_speakers=num_speakers,
+                        max_speakers=num_speakers,
+                    )
+
+            diar_future = self._executor.submit(_run_diarizer_safely)
 
         # ── Phase 2: Whisper ──────────────────────────
         try:

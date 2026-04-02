@@ -229,7 +229,7 @@ If the diarization model is upgraded, speaker alignment can be recomputed withou
 Stores one document per dialogue turn. This is the primary collection for Atlas Vector Search, Atlas Search, and hybrid
 retrieval.
 
-Chunks are derived from **post-processed, speaker-attributed transcript turns**.
+Chunks are derived from **post-processed transcript turns**, with speaker attribution when available.
 
 ### Schema
 
