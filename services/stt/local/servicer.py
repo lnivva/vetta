@@ -239,16 +239,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             return
 
         # ── Diarization flags & Lazy Initialization ───
-        diarize = request.options.diarization
+        diarize = self._diarization_config.enabled
 
         if diarize:
-            if not self._diarization_config.enabled:
-                context.abort(
-                    grpc.StatusCode.INVALID_ARGUMENT,
-                    "Diarization requested but not enabled in service configuration.",
-                )
-                return
-
             if self.diarizer is None:
                 with self._diarization_lock:
                     if self.diarizer is None:
@@ -260,7 +253,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                                     grpc.StatusCode.INTERNAL,
                                     "Diarization requested but dependencies are not installed.",
                                 )
-                                return
 
                             logger.warning(
                                 "Diarization requested but unavailable; "
@@ -279,7 +271,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                                         grpc.StatusCode.INTERNAL,
                                         "Failed to initialize diarization",
                                     )
-                                    return
                                 diarize = False
 
         # ── Preprocess ────────────────────────────────
@@ -347,7 +338,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             except _INFERENCE_ERRORS:
                 logger.exception("Streaming failed")
                 context.abort(grpc.StatusCode.INTERNAL, "Streaming failed")
-                return
 
         # ── Phase 3: Collect for Batch Processing ─────
         try:
@@ -357,7 +347,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             if diar_future is not None:
                 diar_future.cancel()
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
-            return
 
         # ── Phase 4: Resolve diarization future ───────
         diarization = None
@@ -371,7 +360,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                         grpc.StatusCode.INTERNAL,
                         "Diarization failed",
                     )
-                    return
                 diarization = None
 
         # ── Phase 5: Apply diarization labels ─────────
