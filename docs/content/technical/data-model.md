@@ -3,8 +3,9 @@
 ## Overview
 
 This document describes the MongoDB data model for an earnings call analytics platform. The system ingests audio
-recordings of public company earnings calls, transcribes them, identifies speakers through diarization, generates vector
-embeddings, and exposes the content through text search, semantic search, and reranked hybrid retrieval.
+recordings of public company earnings calls, transcribes them, optionally identifies speakers through diarization,
+generates vector embeddings, and exposes the content through text search, semantic search, and reranked hybrid
+retrieval.
 
 The model uses **two collections**:
 
@@ -19,12 +20,18 @@ This separation allows chunking strategies and embedding models to evolve indepe
 Audio File
   │
   ▼
-Transcription (Whisper)
+Resolve + Preprocess
   │
-  ▼
-Diarization (Speaker Attribution)
-  │
-  ▼
+  ├───────────────┐
+  ▼               ▼
+Transcription     Diarization (optional, parallel)
+(Whisper)         (Speaker Attribution)
+  │               │
+  └───────┬───────┘
+          ▼
+Post-processing (speaker assignment, stitching, normalization)
+          │
+          ▼
 ┌──────────────────────┐
 │   earnings_calls     │  ← Source of truth. No embeddings.
 │   (one doc per call) │
@@ -42,21 +49,21 @@ Diarization (Speaker Attribution)
 
 ## Design Principles
 
-| Principle                              | Rationale                                                                |
-|----------------------------------------|--------------------------------------------------------------------------|
-| Separate source from derived chunks    | Re-chunk and re-embed without touching the original transcript           |
-| Chunk at the dialogue turn level       | A speaker's contiguous utterance is the natural semantic boundary        |
-| Collocate embeddings with text         | Eliminates cross-collection joins during vector search                   |
-| Denormalize filter fields onto chunks  | Vector and text search stages can filter without `$lookup`               |
-| Track model lineage                    | Enables incremental re-embedding when models are upgraded                |
-| Store diarization alongside transcript | Speaker attribution is part of the source record, not a derived artifact |
+| Principle                             | Rationale                                                               |
+|---------------------------------------|-------------------------------------------------------------------------|
+| Separate source from derived chunks   | Re-chunk and re-embed without touching the original transcript          |
+| Chunk at the dialogue turn level      | A speaker's contiguous utterance is the natural semantic boundary       |
+| Collocate embeddings with text        | Eliminates cross-collection joins during vector search                  |
+| Denormalize filter fields onto chunks | Vector and text search stages can filter without `$lookup`              |
+| Track model lineage                   | Enables incremental re-embedding when models are upgraded               |
+| Store speaker attribution in source   | Speaker labels are part of the canonical transcript, not a derived view |
 
 ## Collection: `earnings_calls`
 
 ### Purpose
 
-Stores one document per earnings call. Acts as the filtering entry point and the authoritative record of the transcript
-and speaker attribution. Contains **no embeddings**.
+Stores one document per earnings call. Acts as the authoritative record of the transcript and speaker attribution.
+Contains **no embeddings**.
 
 ### Schema
 
@@ -94,20 +101,6 @@ and speaker attribution. Contains **no embeddings**.
       "name": "Conference Operator",
       "title": null,
       "firm": null
-    },
-    {
-      "speaker_id": "Speaker 1",
-      "role": "executive",
-      "name": "Dev Ittycheria",
-      "title": "CEO",
-      "firm": "MongoDB"
-    },
-    {
-      "speaker_id": "Speaker 2",
-      "role": "analyst",
-      "name": "Raimo Lenschow",
-      "title": null,
-      "firm": "Barclays"
     }
   ],
   "transcript": {
@@ -187,52 +180,49 @@ db.earnings_calls.createIndex({status: 1, updated_at: -1})
 
 ## Diarization
 
-Speaker diarization assigns a speaker label to each time segment of the audio. The diarization model produces unlabeled
+Speaker diarization assigns a speaker label to each time span of the audio. The diarization model produces unlabeled
 clusters (`Speaker 0`, `Speaker 1`, …). It knows *when* speakers change but not *who* they are.
 
 ### How It Fits in the Pipeline
 
-Diarization does not persist a standalone `diarization.segments` structure. Instead, its output is directly materialized
-into:
+Diarization is an **optional, independent inference pass** that runs in parallel with transcription when enabled.
 
-- `transcript.segments[].speaker_id` (time-aligned speaker attribution)
+Its output is not stored as a standalone structure. Instead, it is materialized directly into:
+
+- `transcript.segments[].speaker_id`
 - `speakers` (speaker registry and metadata)
 
-These are aligned by timestamp overlap to produce the final transcript segments, where each segment carries both `text`
-and a `speaker_id`.
+Speaker labels are assigned by **temporal overlap** between diarization turns and transcription segments (and words,
+when available).
+
+If diarization is disabled or unavailable, transcripts are stored without speaker labels.
 
 ### Speaker Resolution
 
-The `speakers` array maps raw diarization labels to identities. Resolution can be:
-
-- **Manual**: an operator assigns names after reviewing the transcript
-- **Heuristic**: pattern matching on introductions ("This is Dev Ittycheria, CEO of MongoDB")
-- **Automated**: speaker identification models (future)
-
-Until resolved, speakers remain as `Speaker 0`, `Speaker 1`, etc. with `role: "unknown"` and null identity fields. The
-pipeline does not block on resolution, chunking and embedding proceed with whatever speaker state exists.
+*(unchanged — still accurate)*
 
 ### What Gets Stored
 
-Diarization does not produce a separate data structure. Its output is folded into two existing fields on
+Diarization does not produce a separate persisted artifact. Its output is folded into existing fields on
 `earnings_calls`:
 
-| Field                              | Purpose                                                                                                           |
-|------------------------------------|-------------------------------------------------------------------------------------------------------------------|
-| `speakers`                         | Resolved registry. Maps each `speaker_id` to a name, role, title, and firm. Editable when corrections are needed. |
-| `transcript.segments[].speaker_id` | The join point. Each text segment references a speaker from the registry.                                         |
+| Field                              | Purpose                                |
+|------------------------------------|----------------------------------------|
+| `speakers`                         | Speaker registry and resolved metadata |
+| `transcript.segments[].speaker_id` | Time-aligned speaker attribution       |
 
 The diarization model identifier is recorded in `model_versions.diarization` for lineage tracking.
 
-If the diarization model is upgraded, speaker alignment is recomputed, `transcript.segments` is updated, and the
-`speakers` registry may need re-resolution depending on whether cluster assignments shifted.
+If the diarization model is upgraded, speaker alignment can be recomputed without re-running transcription.
 
 ## Collection: `earnings_chunks`
 
 ### Purpose
 
 Stores one document per dialogue turn. This is the primary collection for Atlas Vector Search, Atlas Search, and hybrid
-retrieval. Embeddings are collocated with the text they represent.
+retrieval.
+
+Chunks are derived from **post-processed, speaker-attributed transcript turns**.
 
 ### Schema
 
@@ -536,21 +526,24 @@ reclassifications are rare and can be handled by a batch update script.
 
 ## Lifecycle States
 
-The `earnings_calls.status` field tracks pipeline progress:
+The `earnings_calls.status` field tracks high-level pipeline progress:
 
 ```text
-ingested → transcribed → diarized → chunked → processed
-                                             ↘ failed
+ingested → transcribed → processed
+                      ↘ failed
 ```
 
-| Status        | Meaning                                                                                            |
-|---------------|----------------------------------------------------------------------------------------------------|
-| `ingested`    | Audio file received and stored                                                                     |
-| `transcribed` | Whisper transcription complete; `transcript.segments` populated                                    |
-| `diarized`    | Speaker diarization complete; `speakers` populated and `transcript.segments[].speaker_id` assigned |
-| `chunked`     | Dialogue turns extracted; `earnings_chunks` documents created                                      |
-| `processed`   | Embeddings generated and written to chunks                                                         |
-| `failed`      | An error occurred; check logs for the failed stage                                                 |
+Diarization, chunking, and embedding occur as part of processing and may be
+enabled or disabled via configuration. Intermediate states are not required
+for correctness and may be omitted in deployments that favor a simpler state
+model.
+
+| Status        | Meaning                                                             |
+|---------------|---------------------------------------------------------------------|
+| `ingested`    | Audio file received and stored                                      |
+| `transcribed` | Transcription complete; raw segments available                      |
+| `processed`   | Speaker attribution (if enabled), chunking, and embeddings complete |
+| `failed`      | An error occurred; check logs for details                           |
 
 ## Context Window Design
 

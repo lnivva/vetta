@@ -117,11 +117,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         """Return the requested speaker count from request options."""
         return options.num_speakers if options.HasField("num_speakers") else 0
 
-        # ------------------------------------------------------------------
-
-    # Helpers: segment normalisation
-    # ------------------------------------------------------------------
-
     @staticmethod
     def _whisper_segments_to_dicts(segments) -> list[dict[str, Any]]:
         """
@@ -185,8 +180,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             ],
         )
 
-        # ----------------------------------------------------------------------
-
     def Transcribe(self, request, context):
         """
         Stream a transcription response for the provided audio request.
@@ -211,7 +204,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-            # ── Diarization flags ─────────────────────────
+        # ── Diarization flags ─────────────────────────
         diarize = request.options.diarization
 
         if diarize:
@@ -251,7 +244,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                             return
                         diarize = False
 
-                        # ── Preprocess ────────────────────────────────
+        # ── Preprocess ────────────────────────────────
         try:
             whisper_input, diar_input = self._preprocessor.prepare(
                 audio,
@@ -261,7 +254,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-            # ── Phase 1: Diarization (run in parallel with Whisper) ───
+        # ── Phase 1: Diarization (run in parallel with Whisper) ───
         diar_future: Future | None = None
         if diarize and diar_input is not None and self.diarizer is not None:
             num_speakers = self._get_num_speakers(request.options)
@@ -272,7 +265,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 max_speakers=num_speakers,
             )
 
-            # ── Phase 2: Whisper ──────────────────────────
+        # ── Phase 2: Whisper ──────────────────────────
         try:
             segments_iter, info = self.model.transcribe(
                 whisper_input,
@@ -296,7 +289,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-            # ── Collect all Whisper segments ──────────────
+        # ── Collect all Whisper segments ──────────────
         try:
             seg_dicts = self._whisper_segments_to_dicts(segments_iter)
         except _INFERENCE_ERRORS:
@@ -306,7 +299,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-            # ── Phase 3: Resolve diarization future ──────
+        # ── Phase 3: Resolve diarization future ──────
         diarization = None
         if diar_future is not None:
             try:
@@ -321,11 +314,11 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     return
                 diarization = None
 
-                # ── Phase 4: Apply diarization labels ────────
+        # ── Phase 4: Apply diarization labels ────────
         if diarization is not None:
             diarization.assign_speakers(seg_dicts)
 
-            # ── Phase 5: Post-processing ─────────────────
+        # ── Phase 5: Post-processing ─────────────────
         if self._postprocessor:
             seg_dicts = self._postprocessor.process_segments(
                 seg_dicts,
@@ -333,7 +326,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 stitch=True,
             )
 
-            # ── Phase 6: Stream results ──────────────────
+        # ── Phase 6: Stream results ──────────────────
         try:
             for seg in seg_dicts:
                 yield self._seg_to_chunk(seg)
