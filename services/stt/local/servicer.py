@@ -98,15 +98,13 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         # ── Execution ────────────────────────────────
         self._executor = ThreadPoolExecutor(max_workers=2)
 
-        # ── Post-processing ──────────────────────────
+        # ── Post-processing Config ───────────────────
         pp_cfg = settings.postprocessing
-        self._postprocessor = (
-            TranscriptPostProcessor(
-                PostProcessorConfig(
-                    enable_punctuation=pp_cfg.punctuation,
-                    enable_entity_correction=pp_cfg.entity_correction,
-                    enable_truecasing=pp_cfg.truecasing,
-                )
+        self._postprocessor_config = (
+            PostProcessorConfig(
+                enable_punctuation=pp_cfg.punctuation,
+                enable_entity_correction=pp_cfg.entity_correction,
+                enable_truecasing=pp_cfg.truecasing,
             )
             if pp_cfg.enabled
             else None
@@ -214,6 +212,13 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None
 
+        # ── Request-scoped Postprocessor ──────────────
+        postprocessor = (
+            TranscriptPostProcessor(self._postprocessor_config)
+            if self._postprocessor_config
+            else None
+        )
+
         # ── Resolve audio ─────────────────────────────
         try:
             audio, log_source, source_type = self._resolver.resolve(request)
@@ -307,7 +312,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             return
 
         # ── Fast Path vs Batch Path ───────────────────
-        requires_batching = diarize or (self._postprocessor is not None)
+        requires_batching = diarize or (postprocessor is not None)
 
         if not requires_batching:
             # ── True Streaming Fast-Path ──────────────
@@ -353,8 +358,8 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             diarization.assign_speakers(seg_dicts)
 
         # ── Phase 6: Post-processing ──────────────────
-        if self._postprocessor:
-            seg_dicts = self._postprocessor.process_segments(
+        if postprocessor:
+            seg_dicts = postprocessor.process_segments(
                 seg_dicts,
                 preserve_raw=True,
                 stitch=True,
