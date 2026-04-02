@@ -18,6 +18,7 @@ from typing import Any
 
 import grpc
 from faster_whisper import WhisperModel
+from huggingface_hub import login
 
 from audio import (
     AudioResolver,
@@ -74,6 +75,15 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         start even when diarization dependencies are missing (e.g. dev).
         """
         s = settings
+        # --- Hugging Face Login ---
+        if s.diarization.enabled and s.diarization.hf_token:
+            try:
+                login(token=s.diarization.hf_token)
+                logger.info("Successfully authenticated with Hugging Face Hub")
+            except Exception as e:
+                logger.error(f"Hugging Face login failed: {e}")
+        # --------------------------
+
         self.inference = s.inference
 
         # ── Audio ────────────────────────────────────
