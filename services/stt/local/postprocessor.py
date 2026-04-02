@@ -60,10 +60,6 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# Entity correction dictionary (lowercase keys)
-# ============================================================================
-
 _RAW_CORRECTIONS: dict[str, str] = {
     # ── Companies ─────────────────────────────────────────────
     "mongos db's": "MongoDB's",
@@ -152,25 +148,13 @@ def _compile_corrections(
 
 _GLOBAL_CORRECTIONS = _compile_corrections(_RAW_CORRECTIONS)
 
-# ============================================================================
-# Regex helpers
-# ============================================================================
-
 _MULTI_SPACE_RE = re.compile(r"\s{2,}")
 _SPACE_BEFORE_PUNCT_RE = re.compile(r"\s+([.!?,;:])")
 _SENTENCE_START_RE = re.compile(r"(?<=[.!?]\s)([a-z])")
 
-# ============================================================================
-# Punctuation model defaults
-# ============================================================================
-
 _PUNCTUATION_CHUNK_WORDS = 500
 _PUNCTUATION_OVERLAP_WORDS = 50
 _DEFAULT_PUNCTUATION_MODEL = "kredor/punctuate-all"
-
-# ============================================================================
-# Stitching configuration
-# ============================================================================
 
 _SENTENCE_END_CHARS = {".", "!", "?"}
 _MAX_STITCH_GAP_SECONDS = 1.0
@@ -214,10 +198,6 @@ class _StitchBuffer:
         return seg
 
 
-# Configuration
-# ============================================================================
-
-
 @dataclass(frozen=True, slots=True)
 class PostProcessorConfig:
     """
@@ -231,9 +211,6 @@ class PostProcessorConfig:
     extra_corrections: dict[str, str] = field(default_factory=dict)
 
 
-# ============================================================================
-# Post-processor
-# ============================================================================
 def _as_float(value: Any, default: float) -> float:
     if isinstance(value, (int, float)):
         return float(value)
@@ -260,11 +237,6 @@ class TranscriptPostProcessor:
         self._punct_available: Optional[bool] = None
         merged_corrections = {**_RAW_CORRECTIONS, **self._config.extra_corrections}
         self._extra_patterns = _compile_corrections(merged_corrections)
-
-        # ------------------------------------------------------------------ #
-
-    # Segment stitching
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def stitch_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -410,11 +382,6 @@ class TranscriptPostProcessor:
         text = text[0].upper() + text[1:]
         return _SENTENCE_START_RE.sub(lambda m: m.group(1).upper(), text)
 
-        # ------------------------------------------------------------------ #
-
-    # Public API
-    # ------------------------------------------------------------------ #
-
     def process_text(self, text: str) -> str:
         if not text.strip():
             return text
@@ -452,13 +419,13 @@ class TranscriptPostProcessor:
         if not segments:
             return segments
 
-            # ── Stitching (in-place semantics) ───────────────────────
+        # ── Stitching (in-place semantics) ───────────────────────
         if stitch:
             stitched = self.stitch_segments(segments)
             segments.clear()
             segments.extend(stitched)
 
-            # ── Text processing ─────────────────────────────────────
+        # ── Text processing ─────────────────────────────────────
         for seg in segments:
             original = seg.get("text", "")
             if preserve_raw:
