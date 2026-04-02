@@ -14,7 +14,6 @@ dependencies = [
     "pyannote.audio==4.0.4",
     "torch==2.10.0",
     "opentelemetry-proto>=1.28.0",
-    "deepmultilingualpunctuation>=1.0.1",
     "torchaudio>=2.10.0",
 ]
 
@@ -48,6 +47,8 @@ module = [
     "faster_whisper.*",
     "ctranslate2.*",
     "pyannote.*",
+    "transformers",
+    "transformers.*",
 ]
 ignore_missing_imports = true
 

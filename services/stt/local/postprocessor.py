@@ -154,7 +154,7 @@ _SENTENCE_START_RE = re.compile(r"(?<=[.!?]\s)([a-z])")
 
 _PUNCTUATION_CHUNK_WORDS = 500
 _PUNCTUATION_OVERLAP_WORDS = 50
-_DEFAULT_PUNCTUATION_MODEL = "kredor/punctuate-all"
+_DEFAULT_PUNCTUATION_MODEL = "oliverguhr/fullstop-punctuation-multilang-large"
 
 _SENTENCE_END_CHARS = {".", "!", "?"}
 _MAX_STITCH_GAP_SECONDS = 1.0
@@ -329,14 +329,20 @@ class TranscriptPostProcessor:
             return self._punctuator
 
         try:
-            from deepmultilingualpunctuation import PunctuationModel  # type: ignore
+            import torch
+            from transformers import pipeline
         except ImportError:
-            logger.warning("deepmultilingualpunctuation not installed")
+            logger.warning("transformers/torch not installed; disabling punctuation")
             self._punct_available = False
             return None
 
         try:
-            self._punctuator = PunctuationModel(model=self._config.punctuation_model)
+            device = 0 if torch.cuda.is_available() else -1
+            self._punctuator = pipeline(
+                task="text2text-generation",
+                model=self._config.punctuation_model,
+                device=device,
+            )
         except Exception:
             logger.exception("Failed to load punctuation model")
             self._punct_available = False
@@ -351,24 +357,35 @@ class TranscriptPostProcessor:
             return text
 
         words = text.split()
+        if not words:
+            return text
+
         if len(words) <= _PUNCTUATION_CHUNK_WORDS:
-            return punctuator.restore_punctuation(text)
+            outputs = punctuator(
+                text,
+                max_length=len(words) * 2,
+                truncation=True,
+            )
+            return outputs[0]["generated_text"]
 
         out: list[str] = []
         stride = _PUNCTUATION_CHUNK_WORDS - _PUNCTUATION_OVERLAP_WORDS
 
         for i in range(0, len(words), stride):
             chunk = " ".join(words[i : i + _PUNCTUATION_CHUNK_WORDS])
-            punct = punctuator.restore_punctuation(chunk)
+            result = punctuator(
+                chunk,
+                max_length=len(chunk.split()) * 2,
+                truncation=True,
+            )
+            punct = result[0]["generated_text"]
+
             if i == 0:
                 out.append(punct)
             else:
                 tokens = punct.split()
                 remainder = tokens[_PUNCTUATION_OVERLAP_WORDS:]
-                if remainder:
-                    out.append(" ".join(remainder))
-                elif i + _PUNCTUATION_OVERLAP_WORDS < len(words):
-                    out.append(" ".join(tokens))
+                out.append(" ".join(remainder))
 
         return " ".join(out)
 
