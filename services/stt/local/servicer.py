@@ -100,10 +100,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
     @staticmethod
     def _segment_to_chunk(segment, speaker_id: str = "") -> speech_pb2.TranscriptChunk:
         """
-        Convert a Whisper segment into the protobuf transcript format.
-
-        The speaker ID is attached separately so diarization can enrich the
-        transcription output without changing Whisper inference output.
+        Convert an entire Whisper segment into the protobuf transcript format.
         """
         return speech_pb2.TranscriptChunk(
             start_time=segment.start,
@@ -122,6 +119,29 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             ],
         )
 
+    @staticmethod
+    def _words_to_chunk(words: list, speaker_id: str, confidence: float) -> speech_pb2.TranscriptChunk:
+        """
+        Helper to create a protobuf transcript chunk from a sub-list of words.
+        This allows us to split a single Whisper segment across multiple speakers.
+        """
+        return speech_pb2.TranscriptChunk(
+            start_time=words[0].start,
+            end_time=words[-1].end,
+            text="".join(w.word for w in words).strip(),
+            speaker_id=speaker_id,
+            confidence=confidence,
+            words=[
+                speech_pb2.Word(
+                    start_time=w.start,
+                    end_time=w.end,
+                    text=w.word,
+                    confidence=w.probability,
+                )
+                for w in words
+            ],
+        )
+
     # ── Main RPC ──────────────────────────────────────────────
 
     def Transcribe(self, request, context):
@@ -129,7 +149,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         Stream a transcription response for the provided audio request.
 
         When diarization is enabled, speaker labels are computed first and then
-        applied to each Whisper segment in the response stream.
+        applied to each Whisper segment (or sub-segment) in the response stream.
         """
         inf = self.inference
         prompt = request.options.initial_prompt or inf.initial_prompt or None
@@ -185,6 +205,10 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
         # ── Phase 2: Whisper ──────────────────────────
         try:
+            # Force word_timestamps to True if diarization is enabled
+            # so we can perform word-level speaker alignment to prevent bleed.
+            use_word_timestamps = inf.word_timestamps or diarize
+
             segments, info = self.model.transcribe(
                 whisper_input,
                 language=request.language or None,
@@ -193,7 +217,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                 vad_parameters={
                     "min_silence_duration_ms": inf.vad_min_silence_ms,
                 },
-                word_timestamps=inf.word_timestamps,
+                word_timestamps=use_word_timestamps,
                 initial_prompt=prompt,
                 no_speech_threshold=inf.no_speech_threshold,
                 log_prob_threshold=inf.log_prob_threshold,
@@ -207,12 +231,47 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         # ── Streaming ─────────────────────────────────
         try:
             for segment in segments:
-                if diarization is not None:
-                    speaker = diarization.speaker_at(segment.start, segment.end)
-                else:
-                    speaker = ""
+                # Fallback to segment-level if diarization is missing or no word timestamps
+                if diarization is None or not segment.words:
+                    speaker = diarization.speaker_at(segment.start, segment.end) if diarization else ""
+                    yield self._segment_to_chunk(segment, speaker_id=speaker)
+                    continue
 
-                yield self._segment_to_chunk(segment, speaker_id=speaker)
+                # Splitting segment by word-level speakers
+                segment_dominant_speaker = diarization.speaker_at(segment.start, segment.end)
+                current_speaker = None
+                current_words = []
+
+                for w in segment.words:
+                    word_speaker = diarization.speaker_at(w.start, w.end)
+
+                    # Fallback if no specific speaker turn is found for this exact word duration
+                    if not word_speaker:
+                        word_speaker = current_speaker or segment_dominant_speaker or ""
+
+                    if current_speaker is None:
+                        current_speaker = word_speaker
+
+                    # A speaker boundary was crossed within the same Whisper segment
+                    if word_speaker != current_speaker:
+                        if current_words:
+                            yield self._words_to_chunk(
+                                current_words,
+                                speaker_id=current_speaker or "",
+                                confidence=segment.avg_logprob,
+                            )
+                        current_speaker = word_speaker
+                        current_words = [w]
+                    else:
+                        current_words.append(w)
+
+                # Yield any remaining accumulated words for this segment
+                if current_words:
+                    yield self._words_to_chunk(
+                        current_words,
+                        speaker_id=current_speaker or "",
+                        confidence=segment.avg_logprob,
+                    )
 
         except grpc.RpcError:
             raise
