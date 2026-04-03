@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct Db {
     client: Client,
     database: Database,
+    supports_transactions: bool,
 }
 
 impl Db {
@@ -23,24 +24,52 @@ impl Db {
         #[cfg(debug_assertions)]
         Self::ping_connection(&database).await?;
 
-        Ok(Self { client, database })
+        let supports_transactions = Self::check_transaction_support(&database).await;
+
+        Ok(Self {
+            client,
+            database,
+            supports_transactions,
+        })
     }
 
     pub fn handle(&self) -> &Database {
         &self.database
     }
 
-    /// Get the underlying client.
+    /// Get the underlying client.  
     pub fn client(&self) -> &Client {
         &self.client
     }
 
-    /// Get a typed collection handle.
+    /// Whether the connected cluster supports multi-document transactions.  
+    pub fn supports_transactions(&self) -> bool {
+        self.supports_transactions
+    }
+
+    /// Get a typed collection handle.  
     pub fn collection<T>(&self, name: &str) -> Collection<T>
     where
         T: Serialize + for<'de> Deserialize<'de> + Unpin + Send + Sync,
     {
         self.database.collection::<T>(name)
+    }
+
+    /// Check whether the server is a replica set or sharded cluster
+    async fn check_transaction_support(db: &Database) -> bool {
+        let result = db.run_command(doc! { "hello": 1 }).await;
+
+        match result {
+            Ok(doc) => {
+                // Replica set members expose `setName`
+                let is_replica_set = doc.get_str("setName").is_ok();
+                // Mongos routers return msg: "isdbgrid"
+                let is_sharded = doc.get_str("msg").map(|m| m == "isdbgrid").unwrap_or(false);
+
+                is_replica_set || is_sharded
+            }
+            Err(_) => false,
+        }
     }
 
     #[cfg(debug_assertions)]

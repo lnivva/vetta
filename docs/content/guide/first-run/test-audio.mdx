@@ -1,58 +1,155 @@
 import {Tab, Tabs} from "@rspress/core/theme";
 
-
 # Generate Test Audio
 
-You need an audio file to test the pipeline. Pick the option that matches your platform.
+To verify the pipeline's accuracy—specifically speaker diarization and financial entity normalization—you need a high-quality test file. The scripts in `dev_scripts/` simulate a multi-speaker earnings call with dense technical and financial terminology.
+
+## 1. Prerequisites
+
+Before running the generators, ensure your system has the necessary tools and voice models installed.
 
 <Tabs>
-    <Tab label="macOS">
-
-        The `say` command generates speech from text. We create two speakers and combine them with ffmpeg:
+    <Tab label="Ubuntu 24.04">
+        We use **Piper**, a fast, local neural TTS engine, to provide high-quality "macOS-like" voices.
 
         ```bash
-        # Speaker 1 (Samantha)
-        say -v Samantha "Good morning everyone and welcome to the Q3 2024 earnings call. \
-        We are pleased to report record revenue of 4.2 billion dollars." -o /tmp/speaker1.aiff
+        # 1. Install media tools
+        sudo apt update && sudo apt install -y ffmpeg wget tar
 
-        # Speaker 2 (Daniel)
-        say -v Daniel "Thank you. Total revenue came in at 4.2 billion. Operating expenses \
-        were 2.1 billion, resulting in a healthy margin." -o /tmp/speaker2.aiff
+        cd ~
 
-        # Speaker 1 again (Samantha)
-        say -v Samantha "Thank you for that overview. Let me now open the floor for questions." -o /tmp/speaker3.aiff
+        # 2. Download Piper binary (installs to ~/piper/)
+        wget https://github.com/rhasspy/piper/releases/download/v1.2.0/piper_amd64.tar.gz
+        tar -xf piper_amd64.tar.gz
 
-        # Combine into a single 16kHz mono WAV
-        ffmpeg -y -i /tmp/speaker1.aiff -i /tmp/speaker2.aiff -i /tmp/speaker3.aiff \
-        -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]" -map "[out]" -ar 16000 -ac 1 /tmp/test.wav
+        # 3. Download voice models into ~/piper/
+        cd ~/piper
+
+        # Speaker 1 — Amy (female, CEO)
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/low/en_US-amy-low.onnx.json
+
+        # Speaker 2 — Lessac (male, CFO)
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json
+
+        # Speaker 3 — Kristin (female, Analyst)
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium/en_US-kristin-medium.onnx
+        wget -nc https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/kristin/medium/en_US-kristin-medium.onnx.json
+
+        cd ~
         ```
-
     </Tab>
-    <Tab label="Linux">
-
-        Use `espeak` to generate speech, or skip straight to an existing audio file:
-
+    <Tab label="macOS">
         ```bash
-        # Option A: Use any audio file you already have
-        cp /path/to/your/earnings-call.mp3 /tmp/test.mp3
+        # Install ffmpeg via Homebrew (say and high-quality voices are built-in)
+        brew install ffmpeg
         ```
-
-        ```bash
-        # Option B: Generate with espeak + ffmpeg
-        sudo apt-get install -y espeak
-
-        espeak -w /tmp/speaker1.wav "Good morning everyone and welcome to the Q3 earnings call."
-        espeak -w /tmp/speaker2.wav "Thank you. Total revenue came in at 4.2 billion."
-
-        ffmpeg -y -i /tmp/speaker1.wav -i /tmp/speaker2.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" -map \
-        "[out]" -ar 16000 -ac 1 /tmp/test.wav
-        ```
-
     </Tab>
 </Tabs>
 
-:::tip
-WAV is the preferred format because Whisper and PyAudio handle it natively without any conversion.
+## 2. Generate Test Audio
 
-Other formats (MP3, AIFF, etc.) are supported through ffmpeg but require an internal conversion step that adds processing time.
-:::
+The generator scripts live in the repository under **`dev_scripts/`**. Both output a **16 kHz mono WAV** file to `/tmp/test.wav`.
+
+<Tabs>
+    <Tab label="Ubuntu 24.04 (Linux)">
+        This script uses **Piper** neural models to simulate a realistic, multi-speaker call.
+        It references `~/piper/` for the binary and voice models, so it works from any working directory.
+
+        ```bash
+
+        # From the repo root
+        chmod +x dev_scripts/gen_test_audio_linux.sh
+        ./dev_scripts/gen_test_audio_linux.sh
+        ```
+
+        :::tip Source
+        [`dev_scripts/gen_test_audio_linux.sh`](https://github.com/your-org/vetta/blob/main/dev_scripts/gen_test_audio_linux.sh)
+        :::
+
+        :::warning Permission error on re-run?
+        If you see `rm: cannot remove '/tmp/stt_test/...': Permission denied`, a previous run
+        (possibly via `sudo`) left root-owned temp files. Clear them first:
+        ```bash
+        sudo rm -rf /tmp/stt_test /tmp/test.wav
+        ```
+        :::
+    </Tab>
+
+    <Tab label="macOS">
+        This script uses the native `say` command with high-quality neural voices.
+
+        ```bash
+        # From the repo root
+        chmod +x dev_scripts/gen_test_audio_macos.sh
+        ./dev_scripts/gen_test_audio_macos.sh
+        ```
+
+        :::tip Source
+        [`dev_scripts/gen_test_audio_macos.sh`](https://github.com/your-org/vetta/blob/main/dev_scripts/gen_test_audio_macos.sh)
+        :::
+    </Tab>
+</Tabs>
+
+### Sample Output
+
+When the Linux script runs successfully you'll see:
+
+```text
+═══════════════════════════════════════════
+  Multi-Speaker Test Audio Generator
+═══════════════════════════════════════════
+
+▸ Checking prerequisites…
+✓ All prerequisites satisfied.
+
+▸ Generating speech segments…
+
+▸ Segment 1/4 — CEO opening  (Amy)
+✓ seg1.wav  (295K)
+▸ Segment 2/4 — CFO financials  (Lessac)
+✓ seg2.wav  (263K)
+▸ Segment 3/4 — CEO strategy  (Amy)
+✓ seg3.wav  (264K)
+▸ Segment 4/4 — Analyst question  (Kristin)
+✓ seg4.wav  (196K)
+
+▸ Concatenating segments with 0.8s silence gaps…
+
+═══════════════════════════════════════════
+  ✓ Success!
+═══════════════════════════════════════════
+
+  File      : /tmp/test.wav
+  Format    : 16000 Hz · mono · PCM-16
+  Duration  : 36.2s
+  Size      : 1.2M
+  Speakers  : 3  (Amy → Lessac → Amy → Kristin)
+```
+
+## 3. Expected Results
+
+After processing `/tmp/test.wav` through the service, verify the output against these targets.
+
+### Entity Normalization
+
+The `TranscriptPostProcessor` should automatically transform raw Whisper outputs into professional financial text:
+
+| Raw Whisper | Expected Correction |
+| :--- | :--- |
+| `mongo db` | **MongoDB** |
+| `q four` | **Q4** |
+| `c e o` / `c f o` | **CEO** / **CFO** |
+| `non gaap` | **non-GAAP** |
+| `opex` / `capex` | **OpEx** / **CapEx** |
+| `a w s` | **AWS** |
+| `open ai` / `chat gpt` | **OpenAI** / **ChatGPT** |
+
+### Diarization
+
+The pipeline should identify **3 distinct speakers**.
+
+* **Speaker A:** First and Third segments (CEO — Strategy)
+* **Speaker B:** Second segment (CFO — Financials)
+* **Speaker C:** Final segment (Analyst — Question)

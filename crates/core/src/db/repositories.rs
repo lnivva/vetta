@@ -25,6 +25,7 @@ pub struct EarningsRepository {
     client: Client,
     calls: Collection<EarningsCallDocument>,
     chunks: Collection<EarningsChunkDocument>,
+    supports_transactions: bool,
 }
 
 /// Request to store a new earnings call and its derived chunks.
@@ -68,6 +69,7 @@ impl EarningsRepository {
             client: db.client().clone(),
             calls: db.collection(CALLS_COLLECTION),
             chunks: db.collection(CHUNKS_COLLECTION),
+            supports_transactions: db.supports_transactions(),
         }
     }
 
@@ -129,18 +131,47 @@ impl EarningsRepository {
         Ok(())
     }
 
-    /// Store a new call and all derived dialogue chunks in a single transaction.
+    /// Store a new call and all derived dialogue chunks.
+    /// Uses a transaction if the cluster supports it, otherwise falls back
+    /// to direct inserts.
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
         let (call_doc, turns) = build_call_and_turns(req, now);
+        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
+        if self.supports_transactions {
+            self.store_transactional(&ctx, call_doc, &turns).await
+        } else {
+            self.store_direct(&ctx, call_doc, &turns).await
+        }
+    }
+
+    /// Replace an existing call identified by its business key, deleting any
+    /// old chunks before inserting the new transcript and chunk set.
+    /// Uses a transaction if the cluster supports it.
+    pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
+        let now = DateTime::now();
+        let (call_doc, turns) = build_call_and_turns(req, now);
+        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
+
+        if self.supports_transactions {
+            self.replace_transactional(&ctx, call_doc, &turns).await
+        } else {
+            self.replace_direct(&ctx, call_doc, &turns).await
+        }
+    }
+
+    async fn store_transactional(
+        &self,
+        ctx: &StoreTransactionContext,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+    ) -> Result<ObjectId, DbError> {
         let mut session = self.client.start_session().await?;
         session.start_transaction().await?;
 
-        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
-
         let result = self
-            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
+            .store_in_transaction(&mut session, ctx, call_doc, turns)
             .await;
 
         match result {
@@ -155,12 +186,12 @@ impl EarningsRepository {
         }
     }
 
-    /// Replace an existing call identified by its business key, deleting any
-    /// old chunks before inserting the new transcript and chunk set.
-    pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
-        let now = DateTime::now();
-        let (call_doc, turns) = build_call_and_turns(req, now);
-
+    async fn replace_transactional(
+        &self,
+        ctx: &StoreTransactionContext,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+    ) -> Result<ObjectId, DbError> {
         let mut session = self.client.start_session().await?;
         session.start_transaction().await?;
 
@@ -187,10 +218,8 @@ impl EarningsRepository {
                 .await?;
         }
 
-        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
-
         let call_id = self
-            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
+            .store_in_transaction(&mut session, ctx, call_doc, turns)
             .await?;
 
         session.commit_transaction().await?;
@@ -220,7 +249,77 @@ impl EarningsRepository {
             .as_object_id()
             .ok_or_else(|| DbError::Serialization("Expected ObjectId".into()))?;
 
-        let chunk_docs: Vec<EarningsChunkDocument> = turns
+        let chunk_docs = self.build_chunk_docs(ctx, call_id, turns);
+
+        if !chunk_docs.is_empty() {
+            self.chunks
+                .insert_many(chunk_docs)
+                .session(&mut *session)
+                .await?;
+        }
+
+        Ok(call_id)
+    }
+
+    async fn store_direct(
+        &self,
+        ctx: &StoreTransactionContext,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+    ) -> Result<ObjectId, DbError> {
+        debug_assert!(
+            matches!(call_doc.status, CallStatus::Chunked),
+            "store() must persist fully chunked calls"
+        );
+
+        let call_result = self.calls.insert_one(call_doc).await?;
+
+        let call_id = call_result
+            .inserted_id
+            .as_object_id()
+            .ok_or_else(|| DbError::Serialization("Expected ObjectId".into()))?;
+
+        let chunk_docs = self.build_chunk_docs(ctx, call_id, turns);
+
+        if !chunk_docs.is_empty() {
+            self.chunks.insert_many(chunk_docs).await?;
+        }
+
+        Ok(call_id)
+    }
+
+    async fn replace_direct(
+        &self,
+        ctx: &StoreTransactionContext,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+    ) -> Result<ObjectId, DbError> {
+        // Delete existing call + chunks (non-atomic but safe for single-writer)
+        if let Some(existing) = self
+            .calls
+            .find_one(doc! {
+                "ticker": &call_doc.ticker,
+                "year": call_doc.year as i32,
+                "quarter": &call_doc.quarter,
+            })
+            .await?
+        {
+            let call_id = existing.id.expect("existing must have id");
+
+            self.chunks.delete_many(doc! { "call_id": call_id }).await?;
+            self.calls.delete_one(doc! { "_id": call_id }).await?;
+        }
+
+        self.store_direct(ctx, call_doc, turns).await
+    }
+
+    fn build_chunk_docs(
+        &self,
+        ctx: &StoreTransactionContext,
+        call_id: ObjectId,
+        turns: &[DialogueTurn],
+    ) -> Vec<EarningsChunkDocument> {
+        turns
             .iter()
             .enumerate()
             .map(|(i, t)| EarningsChunkDocument {
@@ -249,16 +348,7 @@ impl EarningsRepository {
                 model_version: ctx.stt_model.clone(),
                 created_at: ctx.now,
             })
-            .collect();
-
-        if !chunk_docs.is_empty() {
-            self.chunks
-                .insert_many(chunk_docs)
-                .session(&mut *session)
-                .await?;
-        }
-
-        Ok(call_id)
+            .collect()
     }
 
     /// Find a call by its business key.

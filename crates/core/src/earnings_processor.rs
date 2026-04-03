@@ -174,6 +174,12 @@ impl EarningsProcessor {
             .await
             .map_err(|e| PipelineError::Database(e.to_string()))?;
 
+        if db.supports_transactions() {
+            eprintln!("ℹ Cluster supports transactions — using atomic writes");
+        } else {
+            eprintln!("ℹ Cluster does not support transactions — using direct writes");
+        }
+
         // Ensure indexes on startup
         let repo = EarningsRepository::new(&db);
         repo.ensure_indexes()
