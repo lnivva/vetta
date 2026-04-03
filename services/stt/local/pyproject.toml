@@ -11,8 +11,7 @@ dependencies = [
     "requests==2.33.0",
     "python-json-logger==4.0.0",
     "pyannote.audio==4.0.4",
-    "torch==2.10.0",
-    "ctranslate2==4.7.1"
+    "ctranslate2==4.7.1",
 ]
 
 [dependency-groups]
