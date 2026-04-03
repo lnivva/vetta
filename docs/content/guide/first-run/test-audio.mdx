@@ -4,7 +4,7 @@ import {Tab, Tabs} from "@rspress/core/theme";
 
 <p>
     You need an audio file to test the pipeline. Pick the option that matches your platform. We provide helper scripts
-    in the `_dev_script/` directory that generate realistic multi-speaker audio with acoustic fingerprinting for
+    in the `_dev_scripts/` directory that generate realistic multi-speaker audio with acoustic fingerprinting for
     reliable diarization testing.
 </p>
 
@@ -18,7 +18,7 @@ import {Tab, Tabs} from "@rspress/core/theme";
 
         ```bash
         # Run the generator script
-        ./_dev_script/gen_test_audio_macos.sh
+        ./_dev_scripts/gen_test_audio_macos.sh
         ```
 
         This will output a perfectly formatted 16kHz, mono, PCM-16 file at `/tmp/test.wav` featuring three distinct
@@ -35,10 +35,10 @@ import {Tab, Tabs} from "@rspress/core/theme";
 
         ```bash
         # 1. Download and configure Piper + voices to ~/piper
-        ./_dev_script/setup_piper_linux.sh
+        ./_dev_scripts/setup_piper_linux.sh
 
         # 2. Run the generator script
-        ./_dev_script/gen_test_audio_linux.sh
+        ./_dev_scripts/gen_test_audio_linux.sh
         ```
 
         This will output a perfectly formatted 16kHz, mono, PCM-16 file at `/tmp/test.wav` featuring three distinct
