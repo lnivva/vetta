@@ -3,10 +3,13 @@ use crate::db::models::{
     ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
 };
 use crate::db::{Db, DbError};
+use serde::Deserialize;
+use tracing::{error, info, instrument, warn};
+
+use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::options::IndexOptions;
 use mongodb::{Client, Collection, IndexModel};
-use serde::Deserialize;
 
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
@@ -21,6 +24,7 @@ struct IdOnly {
 
 /// Repository for storing, retrieving, and maintaining earnings call documents
 /// and their derived dialogue chunks.
+#[derive(Clone)]
 pub struct EarningsRepository {
     client: Client,
     calls: Collection<EarningsCallDocument>,
@@ -71,8 +75,14 @@ impl EarningsRepository {
         }
     }
 
-    /// Ensure all collection indexes required by the repository are present.
+    /// Ensure all standard B-Tree collection indexes are present.
+    ///
+    /// Note: Atlas Search (`$search`) and Vector Search (`$vectorSearch`) indexes
+    /// are strictly managed outside the application via Infrastructure as Code (Terraform).
+    #[instrument(skip(self), name = "ensure_standard_indexes")]
     pub async fn ensure_indexes(&self) -> Result<(), DbError> {
+        info!("Ensuring standard MongoDB B-Tree indexes exist...");
+
         self.calls
             .create_index(
                 IndexModel::builder()
@@ -130,6 +140,7 @@ impl EarningsRepository {
     }
 
     /// Store a new call and all derived dialogue chunks in a single transaction.
+    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year))]
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
         let (call_doc, turns) = build_call_and_turns(req, now);
@@ -139,16 +150,17 @@ impl EarningsRepository {
 
         let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
-        let result = self
+        match self
             .store_in_transaction(&mut session, &ctx, call_doc, &turns)
-            .await;
-
-        match result {
+            .await
+        {
             Ok(call_id) => {
                 session.commit_transaction().await?;
+                info!(call_id = %call_id, "Successfully stored new earnings call");
                 Ok(call_id)
             }
             Err(e) => {
+                error!(error = %e, "Failed to store earnings call, aborting transaction");
                 let _ = session.abort_transaction().await;
                 Err(e)
             }
@@ -157,6 +169,7 @@ impl EarningsRepository {
 
     /// Replace an existing call identified by its business key, deleting any
     /// old chunks before inserting the new transcript and chunk set.
+    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year))]
     pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
         let (call_doc, turns) = build_call_and_turns(req, now);
@@ -175,6 +188,7 @@ impl EarningsRepository {
             .await?
         {
             let call_id = existing.id.expect("existing must have id");
+            warn!(call_id = %call_id, "Found existing call for business key, replacing...");
 
             self.chunks
                 .delete_many(doc! { "call_id": call_id })
@@ -189,12 +203,21 @@ impl EarningsRepository {
 
         let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
-        let call_id = self
+        match self
             .store_in_transaction(&mut session, &ctx, call_doc, &turns)
-            .await?;
-
-        session.commit_transaction().await?;
-        Ok(call_id)
+            .await
+        {
+            Ok(call_id) => {
+                session.commit_transaction().await?;
+                info!(call_id = %call_id, "Successfully replaced earnings call");
+                Ok(call_id)
+            }
+            Err(e) => {
+                error!(error = %e, "Failed to replace earnings call, aborting transaction");
+                let _ = session.abort_transaction().await;
+                Err(e)
+            }
+        }
     }
 
     async fn store_in_transaction(
@@ -281,12 +304,11 @@ impl EarningsRepository {
     }
 
     /// Retrieve all chunks for a call, ordered by chunk position.
+    #[instrument(skip(self))]
     pub async fn get_chunks(
         &self,
         call_id: ObjectId,
     ) -> Result<Vec<EarningsChunkDocument>, DbError> {
-        use futures::TryStreamExt;
-
         let cursor = self
             .chunks
             .find(doc! { "call_id": call_id })
@@ -298,46 +320,68 @@ impl EarningsRepository {
     }
 
     /// Update chunk embeddings and record the embedding model version used.
+    /// Utilizes concurrent `update_one` requests to maximize network I/O
+    /// in the absence of a stable `bulk_write` API in the Rust driver.
+    #[instrument(skip(self, updates))]
     pub async fn update_embeddings(
         &self,
         updates: Vec<(ObjectId, Vec<f32>)>,
         model_version: &str,
     ) -> Result<u64, DbError> {
-        let mut modified = 0u64;
-
-        for batch in updates.chunks(100) {
-            for (chunk_id, embedding) in batch {
-                let embedding_bson = serialize_to_bson(embedding)
-                    .map_err(|e| DbError::Serialization(e.to_string()))?;
-
-                let result = self
-                    .chunks
-                    .update_one(
-                        doc! { "_id": chunk_id },
-                        doc! {
-                            "$set": {
-                                "embedding": embedding_bson,
-                                "model_version": model_version,
-                            }
-                        },
-                    )
-                    .await?;
-
-                modified += result.modified_count;
-            }
+        if updates.is_empty() {
+            return Ok(0);
         }
 
+        let mut modified = 0u64;
+
+        let concurrency_limit = 50;
+
+        let chunks_collection = self.chunks.clone();
+
+        let mut stream = futures::stream::iter(updates.into_iter())
+            .map(|(chunk_id, embedding)| {
+                let chunks = chunks_collection.clone();
+                let model_ver = model_version.to_string();
+
+                async move {
+                    let embedding_bson = serialize_to_bson(&embedding)
+                        .map_err(|e| DbError::Serialization(e.to_string()))?;
+
+                    let result = chunks
+                        .update_one(
+                            doc! { "_id": chunk_id },
+                            doc! {
+                                "$set": {
+                                    "embedding": embedding_bson,
+                                    "model_version": model_ver,
+                                }
+                            },
+                        )
+                        .await?;
+
+                    Ok::<u64, DbError>(result.modified_count)
+                }
+            })
+            .buffer_unordered(concurrency_limit);
+
+        while let Some(result) = stream.next().await {
+            modified += result?;
+        }
+
+        info!(
+            modified_chunks = modified,
+            model_version, "Successfully applied vector embeddings"
+        );
         Ok(modified)
     }
 
     /// Find all chunk IDs that need to be embedded or re-embedded for the
     /// given model version.
+    #[instrument(skip(self))]
     pub async fn find_chunks_needing_embedding(
         &self,
         current_model: &str,
     ) -> Result<Vec<ObjectId>, DbError> {
-        use futures::TryStreamExt;
-
         let untyped: Collection<IdOnly> = self.chunks.clone_with_type();
 
         let cursor = untyped
@@ -355,7 +399,9 @@ impl EarningsRepository {
     }
 
     /// Delete a call and all of its associated chunks.
+    #[instrument(skip(self))]
     pub async fn delete_call(&self, call_id: ObjectId) -> Result<(), DbError> {
+        info!(call_id = %call_id, "Deleting call and associated chunks");
         self.chunks.delete_many(doc! { "call_id": call_id }).await?;
         self.calls.delete_one(doc! { "_id": call_id }).await?;
         Ok(())

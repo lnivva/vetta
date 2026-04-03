@@ -9,8 +9,8 @@ retrieval.
 
 The model uses **two collections**:
 
-- **`earnings_calls`** — one document per call; the immutable source of truth
-- **`earnings_chunks`** — one document per dialogue turn; the search-optimized unit
+* **`earnings_calls`** — one document per call; the immutable source of truth.
+* **`earnings_chunks`** — one document per dialogue turn; the search-optimized unit.
 
 This separation allows chunking strategies and embedding models to evolve independently of the source transcript.
 
@@ -49,14 +49,14 @@ Post-processing (speaker assignment, stitching, normalization)
 
 ## Design Principles
 
-| Principle                             | Rationale                                                               |
-|---------------------------------------|-------------------------------------------------------------------------|
-| Separate source from derived chunks   | Re-chunk and re-embed without touching the original transcript          |
-| Chunk at the dialogue turn level      | A speaker's contiguous utterance is the natural semantic boundary       |
-| Collocate embeddings with text        | Eliminates cross-collection joins during vector search                  |
-| Denormalize filter fields onto chunks | Vector and text search stages can filter without `$lookup`              |
-| Track model lineage                   | Enables incremental re-embedding when models are upgraded               |
-| Store speaker attribution in source   | Speaker labels are part of the canonical transcript, not a derived view |
+| Principle                                 | Rationale                                                                |
+|:------------------------------------------|:-------------------------------------------------------------------------|
+| **Separate source from derived chunks**   | Re-chunk and re-embed without touching the original transcript.          |
+| **Chunk at the dialogue turn level**      | A speaker's contiguous utterance is the natural semantic boundary.       |
+| **Collocate embeddings with text**        | Eliminates cross-collection joins during vector search.                  |
+| **Denormalize filter fields onto chunks** | Vector and text search stages can filter without a costly `$lookup`.     |
+| **Track model lineage**                   | Enables incremental re-embedding when models are upgraded.               |
+| **Store speaker attribution in source**   | Speaker labels are part of the canonical transcript, not a derived view. |
 
 ## Collection: `earnings_calls`
 
@@ -127,7 +127,7 @@ Contains **no embeddings**.
 ### Field Reference
 
 | Field                                 | Type           | Description                                                                                   |
-|---------------------------------------|----------------|-----------------------------------------------------------------------------------------------|
+|:--------------------------------------|:---------------|:----------------------------------------------------------------------------------------------|
 | `ticker`                              | String         | Stock ticker symbol                                                                           |
 | `year`                                | Number         | Fiscal year                                                                                   |
 | `quarter`                             | String         | Fiscal quarter (`Q1`–`Q4`)                                                                    |
@@ -183,53 +183,19 @@ db.earnings_calls.createIndex({status: 1, updated_at: -1})
 Speaker diarization assigns a speaker label to each time span of the audio. The diarization model produces unlabeled
 clusters (`Speaker 0`, `Speaker 1`, …). It knows *when* speakers change but not *who* they are.
 
-### How It Fits in the Pipeline
-
-Diarization is an **optional, independent inference pass** that runs in parallel with transcription when enabled.
-
-Its output is not stored as a standalone structure. Instead, it is materialized directly into:
-
-- `transcript.segments[].speaker_id`
-- `speakers` (speaker registry and metadata)
-
-Speaker labels are assigned by **temporal overlap** between diarization turns and transcription segments (and words,
-when available).
-
-If diarization is disabled or unavailable, transcripts are stored without speaker labels.
-
-### Speaker Resolution
-
-The `speakers` array maps raw diarization labels to identities. Resolution can be:
-
-- **Manual**: an operator assigns names after reviewing the transcript
-- **Heuristic**: pattern matching on introductions ("This is Dev Ittycheria, CEO of MongoDB")
-- **Automated**: speaker identification models (future)
-
-Until resolved, speakers remain as `Speaker 0`, `Speaker 1`, etc. with `role: "unknown"` and null identity fields. The
-pipeline does not block on resolution, chunking and embedding proceed with whatever speaker state exists.
-
-### What Gets Stored
-
-Diarization does not produce a separate persisted artifact. Its output is folded into existing fields on
-`earnings_calls`:
-
-| Field                              | Purpose                                |
-|------------------------------------|----------------------------------------|
-| `speakers`                         | Speaker registry and resolved metadata |
-| `transcript.segments[].speaker_id` | Time-aligned speaker attribution       |
-
-The diarization model identifier is recorded in `model_versions.diarization` for lineage tracking.
-
-If the diarization model is upgraded, speaker alignment can be recomputed without re-running transcription.
+* **How It Fits:** Diarization is an **optional, independent inference pass** that runs in parallel with transcription
+  when enabled.
+* **Materialization:** Its output is not stored as a standalone structure. Instead, it is folded directly into
+  `transcript.segments[].speaker_id` and the `speakers` registry via temporal overlap alignment.
+* **Resolution:** Speakers begin as `Speaker 0` (with `role: "unknown"`). They can be resolved manually, via heuristics,
+  or by secondary AI models later. The pipeline does not block on this resolution.
 
 ## Collection: `earnings_chunks`
 
 ### Purpose
 
 Stores one document per dialogue turn. This is the primary collection for Atlas Vector Search, Atlas Search, and hybrid
-retrieval.
-
-Chunks are derived from **post-processed transcript turns**, with speaker attribution when available.
+retrieval. Chunks are derived from post-processed transcript turns, with speaker attribution when available.
 
 ### Schema
 
@@ -274,7 +240,7 @@ Chunks are derived from **post-processed transcript turns**, with speaker attrib
 ### Field Reference
 
 | Field                      | Type            | Description                                                      |
-|----------------------------|-----------------|------------------------------------------------------------------|
+|:---------------------------|:----------------|:-----------------------------------------------------------------|
 | `call_id`                  | ObjectId        | Foreign key to `earnings_calls._id`                              |
 | `ticker`                   | String          | Denormalized. Stock ticker symbol.                               |
 | `year`                     | Number          | Denormalized. Fiscal year.                                       |
@@ -294,13 +260,18 @@ Chunks are derived from **post-processed transcript turns**, with speaker attrib
 | `context.previous_speaker` | String \| null  | Preceding turn's speaker name                                    |
 | `context.next_text`        | String \| null  | Following turn's text                                            |
 | `context.next_speaker`     | String \| null  | Following turn's speaker name                                    |
-| `embedding`                | Array\<Number\> | Vector embedding (1024 dimensions, `voyage-finance-2`)           |
+| `embedding`                | Array\<Number\> | Vector embedding                                                 |
 | `word_count`               | Number          | Word count of `text`                                             |
 | `token_count`              | Number          | Token count of `text` (model-specific)                           |
 | `model_version`            | String          | Embedding model that produced `embedding`                        |
 | `created_at`               | Date            | Chunk creation timestamp                                         |
 
-### Atlas Vector Search Index
+## Search & Vector Indexes
+
+### 1. Atlas Vector Search Index
+
+Filter fields are explicitly declared in the vector index definition so that pre-filtered approximate nearest neighbor (
+ANN) search can accurately narrow candidates **before** distance computation.
 
 ```json
 {
@@ -347,10 +318,9 @@ Chunks are derived from **post-processed transcript turns**, with speaker attrib
 }
 ```
 
-Filter fields are declared in the vector index definition so that pre-filtered approximate nearest neighbor (ANN) search
-can narrow candidates **before** distance computation.
+### 2. Atlas Search Index (Full-Text)
 
-### Atlas Search Index (Full-Text)
+This index handles full-text keyword matching, fuzzy matching, and exact phrase matching.
 
 ```json
 {
@@ -399,10 +369,17 @@ can narrow candidates **before** distance computation.
 }
 ```
 
-The `text` field uses `lucene.english` for stemmed full-text search with a `keyword` multi-field for exact match.
-Metadata fields use `token` or `number` types for filtering within `$search` compound queries.
+**Index Design Notes:**
 
-### Standard Indexes
+* **Analyzers:** `lucene.english` is used on `text` to enable word stemming (e.g., "running" matches "run").
+  `lucene.standard` is used on `speaker.name` to avoid altering human names.
+* **Fuzzy Matching:** Inherently supported at query time by the text index. No special configuration is required here.
+* **Keyword Multi-field:** The `text.keyword` sub-field bypasses the English stemmer, indexing exact phrasing. This is
+  critical when searching for non-standard financial acronyms or exact quotes.
+* **Token Types:** Enumerations and tags (`ticker`, `chunk_type`, `quarter`) use the `token` type for highly efficient
+  exact-match filtering.
+
+### 3. Standard Indexes
 
 ```javascript
 // Reconstruct a full call in order
@@ -419,8 +396,8 @@ db.earnings_chunks.createIndex({model_version: 1})
 
 ### Semantic Search with Pre-Filtering
 
-Retrieve the top 50 executive statements for a given ticker using vector similarity, then project the fields needed for
-application-side reranking.
+Retrieve the top 50 executive statements for a given ticker using vector similarity, filtering candidates prior to
+calculating cosine distance.
 
 ```javascript
 db.earnings_chunks.aggregate([
@@ -440,30 +417,18 @@ db.earnings_chunks.aggregate([
         }
     },
     {
-        $addFields: {
-            vs_score: {$meta: "vectorSearchScore"}
-        }
-    },
-    {
         $project: {
-            _id: 1,
-            text: 1,
-            context: 1,
-            speaker: 1,
-            ticker: 1,
-            quarter: 1,
-            year: 1,
-            chunk_type: 1,
-            start_time: 1,
-            vs_score: 1
+            _id: 1, text: 1, context: 1, speaker: 1, ticker: 1, chunk_type: 1,
+            vs_score: {$meta: "vectorSearchScore"}
         }
     }
 ])
 ```
 
-### Full-Text Search with Metadata Filters
+### Full-Text Search with Fuzzy Matching
 
-Find all Q3 executive statements mentioning margins.
+Find Q3 executive statements mentioning terms similar to "acquisition" or "margins". Highly effective for ASR
+transcripts where homophones or minor typos exist.
 
 ```javascript
 db.earnings_chunks.aggregate([
@@ -472,7 +437,16 @@ db.earnings_chunks.aggregate([
             index: "chunk_text_index",
             compound: {
                 must: [
-                    {text: {query: "margins gross operating", path: "text"}}
+                    {
+                        text: {
+                            query: "aquisition margin", // Intentional typo 
+                            path: "text",
+                            fuzzy: {
+                                maxEdits: 2,
+                                prefixLength: 3
+                            }
+                        }
+                    }
                 ],
                 filter: [
                     {equals: {path: "quarter", value: "Q3"}},
@@ -484,24 +458,47 @@ db.earnings_chunks.aggregate([
     {$limit: 25},
     {
         $project: {
-            ticker: 1,
-            year: 1,
-            text: 1,
-            speaker: 1,
+            ticker: 1, year: 1, text: 1, speaker: 1,
             score: {$meta: "searchScore"}
         }
     }
 ])
 ```
 
+### Exact Phrase Match (Keyword)
+
+Find exact, literal mentions of a phrase, bypassing the English stemmer using the multi-field setup.
+
+```javascript
+db.earnings_chunks.aggregate([
+    {
+        $search: {
+            index: "chunk_text_index",
+            phrase: {
+                query: "consumption-based revenue",
+                path: "text.keyword"
+            }
+        }
+    }
+])
+```
+
+### Hybrid Search (Vector + Keyword) via App-Side RRF
+
+For optimal retrieval, query both the vector index and the text index, then fuse the results.
+
+1. **Parallel Execution:** Run `$vectorSearch` and `$search` concurrently from your application tier.
+2. **Reciprocal Rank Fusion (RRF):** Combine the lists by ranking unique chunks:
+   `1 / (k + Rank_vector) + 1 / (k + Rank_text)` *(k is usually 60)*.
+3. **Cross-Encoder Reranking:** Send the top *N* fused results, along with their `context`, to an LLM/Reranker (e.g.,
+   Cohere) for the final sort.
+
 ### Reconstruct a Full Call
 
 Retrieve all chunks for a call in chronological order.
 
 ```javascript
-db.earnings_chunks
-    .find({call_id: ObjectId("...")})
-    .sort({chunk_index: 1})
+db.earnings_chunks.find({call_id: ObjectId("...")}).sort({chunk_index: 1})
 ```
 
 ### Find Chunks Needing Re-Embedding
@@ -517,19 +514,37 @@ db.earnings_chunks.find({model_version: "voyage-finance-1"})
 The following fields are copied from `earnings_calls` onto each `earnings_chunks` document:
 
 | Field       | Source                          |
-|-------------|---------------------------------|
+|:------------|:--------------------------------|
 | `ticker`    | `earnings_calls.ticker`         |
 | `year`      | `earnings_calls.year`           |
 | `quarter`   | `earnings_calls.quarter`        |
 | `call_date` | `earnings_calls.call_date`      |
 | `sector`    | `earnings_calls.company.sector` |
 
-**Rationale:** Both `$vectorSearch` and `$search` operate on a single collection. Without denormalization, every search
-query would require a `$lookup` to filter on call-level metadata, which is incompatible with Atlas Search and Vector
-Search stages.
+**Rationale:** `$vectorSearch` and `$search` operate on a single collection. Denormalization eliminates the need for an
+expensive `$lookup` pipeline stage to filter by call-level metadata.
 
-**Trade-off:** If a company's sector classification changes, both collections must be updated. In practice, sector
-reclassifications are rare and can be handled by a batch update script.
+## Context Window Design
+
+Each chunk stores its neighboring turns in the `context` subdocument:
+
+```json
+{
+  "context": {
+    "previous_text": "...",
+    "previous_speaker": "...",
+    "next_text": "...",
+    "next_speaker": "..."
+  }
+}
+```
+
+**Purposes:**
+
+1. **Reranking:** The reranker receives the surrounding dialogue, improving relevance scoring for chunks that lack
+   explicit subject matter but act as answers to preceding questions.
+2. **LLM Grounding:** Provides conversational continuity when injecting context into prompts, without needing extra
+   database round-trips.
 
 ## Lifecycle States
 
@@ -540,48 +555,20 @@ ingested → transcribed → processed
                       ↘ failed
 ```
 
-Diarization, chunking, and embedding occur as part of processing and may be
-enabled or disabled via configuration. Intermediate states are not required
-for correctness and may be omitted in deployments that favor a simpler state
-model.
-
-| Status        | Meaning                                                             |
-|---------------|---------------------------------------------------------------------|
-| `ingested`    | Audio file received and stored                                      |
-| `transcribed` | Transcription complete; raw segments available                      |
-| `processed`   | Speaker attribution (if enabled), chunking, and embeddings complete |
-| `failed`      | An error occurred; check logs for details                           |
-
-## Context Window Design
-
-Each chunk stores its neighboring turns in the `context` subdocument:
-
-```json
-{
-   "context": {
-      "previous_text": "...",
-      "previous_speaker": "...",
-      "next_text": "...",
-      "next_speaker": "..."
-   }
-}
-```
-
-This serves two purposes:
-
-1. **Reranking** — the reranker receives the surrounding dialogue alongside the candidate chunk, improving relevance
-   scoring for turns that depend on the preceding question.
-2. **LLM grounding** — when presenting retrieved chunks to a language model, the context fields provide continuity
-   without requiring additional database round-trips.
-
-The `token_count` field enables precise context window budgeting when assembling multiple chunks for LLM input.
+| Status        | Meaning                                                |
+|:--------------|:-------------------------------------------------------|
+| `ingested`    | Audio file received and stored                         |
+| `transcribed` | Transcription complete; raw segments available         |
+| `processed`   | Speaker attribution, chunking, and embeddings complete |
+| `failed`      | An error occurred; check application logs              |
 
 ## Extensibility
 
-| Extension                       | Approach                                                                                                                                   |
-|---------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
-| **Multi-tenancy**               | Add a `tenant_id` field to both collections and include it as a `filter` field in both search index definitions                            |
-| **New embedding model**         | Write new `earnings_chunks` documents with the updated `model_version`; query by `model_version` to track migration progress               |
-| **Different chunking strategy** | Drop and recreate `earnings_chunks`; `earnings_calls` remains unchanged                                                                    |
-| **New diarization model**       | Rerun diarization, update `transcript.segments[].speaker_id`, and re-resolve the `speakers` registry if needed. Source audio is unchanged. |
-| **Additional metadata**         | Add fields to `earnings_chunks` and register them as `filter` fields in the relevant search index                                          |
+| Extension                       | Approach                                                                                                                                                                |
+|:--------------------------------|:------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Multi-tenancy**               | Add a `tenant_id` field to both collections and include it as a `filter` mapping in both search indexes.                                                                |
+| **New embedding model**         | Write new `earnings_chunks` documents with the updated `model_version`; query by `model_version` to track migration progress.                                           |
+| **Different chunking strategy** | Drop and recreate `earnings_chunks`; `earnings_calls` remains unchanged.                                                                                                |
+| **New diarization model**       | Rerun diarization, update `transcript.segments[].speaker_id`, and re-resolve the `speakers` registry.                                                                   |
+| **Custom Financial Synonyms**   | Create a synonym mapping collection in Atlas Search (e.g., "CAPEX" to "capital expenditures") and attach it to the `lucene.english` analyzer in the `chunk_text_index`. |
+| **Additional metadata**         | Add fields to `earnings_chunks` and register them as `token` or `filter` mappings in the relevant index definitions.                                                    |

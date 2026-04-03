@@ -21,6 +21,7 @@ prost.workspace = true
 hyper-util.workspace = true
 mongodb.workspace = true
 futures.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
