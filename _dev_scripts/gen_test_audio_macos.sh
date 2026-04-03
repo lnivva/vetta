@@ -11,9 +11,6 @@
 #    - CFO      (Alex)
 #    - Analyst  (Victoria)
 #
-#  Speaker separability is enforced via pitch / tempo / EQ / loudness
-#  fingerprints so pyannote diarization works reliably.
-#
 #  Requires:
 #    - macOS built-in 'say' command
 #    - ffmpeg (e.g., via Homebrew)
@@ -21,69 +18,19 @@
 
 set -euo pipefail
 
-# ── Configuration ──────────────────────────────────────────────────────────
-OUTPUT="/tmp/test.wav"
-TMP="/tmp/stt_test"
+# ── Source shared library ──────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/audio_common.sh"
 
+# ── Platform-specific configuration ───────────────────────────────────────
 # Standard macOS voices. You can check available voices with: say -v '?'
 VOICE_CEO="Samantha"
 VOICE_CFO="Alex"
 VOICE_ANALYST="Victoria"
 
-SAMPLE_RATE=16000
-PAD_SECONDS="0.8"
-
-# ── Colours ────────────────────────────────────────────────────────────────
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m'
-
-# ── Logging helpers ────────────────────────────────────────────────────────
-info()    { echo -e "${CYAN}▸${NC} $*"; }
-success() { echo -e "${GREEN}✓${NC} $*"; }
-fail()    { echo -e "${RED}✗ ERROR:${NC} $*" >&2; exit 1; }
-
-# ── Speaker acoustic fingerprints ──────────────────────────────────────────
-# These differences are subtle to humans but large for speaker embeddings
-apply_speaker_profile() {
-  local in="$1"
-  local out="$2"
-  local profile="$3"
-
-  case "$profile" in
-    ceo)
-      # Neutral, confident
-      ffmpeg -nostdin -y -i "$in" \
-        -af "loudnorm=I=-16:TP=-1.5:LRA=11" \
-        "$out" 2>/dev/null
-      ;;
-    cfo)
-      # Lower pitch, slower, darker
-      ffmpeg -nostdin -y -i "$in" \
-        -af "asetrate=16000*0.94,aresample=16000,atempo=0.96,\
-             equalizer=f=180:t=q:w=1:g=-4,\
-             loudnorm=I=-18:TP=-1.5:LRA=11" \
-        "$out" 2>/dev/null
-      ;;
-    analyst)
-      # Higher pitch, faster, brighter
-      ffmpeg -nostdin -y -i "$in" \
-        -af "asetrate=16000*1.06,aresample=16000,atempo=1.05,\
-             equalizer=f=3000:t=q:w=1:g=4,\
-             loudnorm=I=-14:TP=-1.5:LRA=11" \
-        "$out" 2>/dev/null
-      ;;
-    *)
-      cp "$in" "$out"
-      ;;
-  esac
-}
-
-# ── Generate one segment ───────────────────────────────────────────────────
+# ── Generate one segment (macOS 'say') ─────────────────────────────────────
 # $1 text
-# $2 macos voice
+# $2 macOS voice
 # $3 output wav
 # $4 speaker profile
 generate_segment() {
@@ -109,15 +56,11 @@ generate_segment() {
   rm -f "$raw_aiff" "$norm"
 
   [[ -f "$outfile" ]] || fail "Failed to generate $(basename "$outfile")"
-  success "$(basename "$outfile") ($(du -h "$outfile" | cut -f1))"
+  success "$(basename "$outfile") ($(du -h "$outfile" | awk '{print $1}'))"
 }
 
 # ── Pre-flight checks ──────────────────────────────────────────────────────
-echo ""
-echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Multi-Speaker Test Audio Generator (macOS)${NC}"
-echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo ""
+print_banner "Multi-Speaker Test Audio Generator (macOS)"
 
 info "Checking prerequisites..."
 
@@ -133,8 +76,7 @@ success "All prerequisites satisfied."
 echo ""
 
 # ── Workspace ──────────────────────────────────────────────────────────────
-rm -rf "$TMP"
-mkdir -p "$TMP"
+prepare_workspace
 
 # ── Generate segments ──────────────────────────────────────────────────────
 info "Generating speech segments..."
@@ -170,42 +112,9 @@ generate_segment \
 
 echo ""
 
-# ── Concatenate with silence ───────────────────────────────────────────────
-info "Concatenating segments with ${PAD_SECONDS}s silence gaps..."
+# ── Concatenate & finish ───────────────────────────────────────────────────
+concatenate_segments "$TMP/seg1.wav" "$TMP/seg2.wav" "$TMP/seg3.wav" "$TMP/seg4.wav"
 
-FF_FILTER=$(cat <<EOF
-[0:a]apad=pad_dur=${PAD_SECONDS}[a0];
-[1:a]apad=pad_dur=${PAD_SECONDS}[a1];
-[2:a]apad=pad_dur=${PAD_SECONDS}[a2];
-[a0][a1][a2][3:a]concat=n=4:v=0:a=1[out]
-EOF
-)
-
-ffmpeg -nostdin -y \
-  -i "$TMP/seg1.wav" \
-  -i "$TMP/seg2.wav" \
-  -i "$TMP/seg3.wav" \
-  -i "$TMP/seg4.wav" \
-  -filter_complex "$FF_FILTER" \
-  -map "[out]" -ar "$SAMPLE_RATE" -ac 1 "$OUTPUT" 2>/dev/null
-
-[[ -f "$OUTPUT" ]] || fail "Failed to produce $OUTPUT"
-
-# ── Cleanup & summary ──────────────────────────────────────────────────────
 rm -rf "$TMP"
 
-DURATION=$(ffprobe -v error -show_entries format=duration \
-  -of default=noprint_wrappers=1:nokey=1 "$OUTPUT" 2>/dev/null || echo "?")
-SIZE=$(du -h "$OUTPUT" | awk '{print $1}')
-
-echo ""
-echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo -e "${GREEN}${BOLD}  ✓ Success!${NC}"
-echo -e "${BOLD}═══════════════════════════════════════════${NC}"
-echo ""
-echo -e "  File      : ${BOLD}$OUTPUT${NC}"
-echo -e "  Format    : ${SAMPLE_RATE} Hz · mono · PCM‑16"
-echo -e "  Duration  : ${DURATION}s"
-echo -e "  Size      : ${SIZE}"
-echo -e "  Voices    : CEO ($VOICE_CEO) → CFO ($VOICE_CFO) → Analyst ($VOICE_ANALYST)"
-echo ""
+print_summary "CEO ($VOICE_CEO) → CFO ($VOICE_CFO) → CEO ($VOICE_CEO) → Analyst ($VOICE_ANALYST)"

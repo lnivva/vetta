@@ -2,13 +2,11 @@ use miette::Diagnostic;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
-use tokio_stream::StreamExt; // <-- Moved to the top
+use tokio_stream::StreamExt;
 
 use crate::db::{Db, DbError, EarningsRepository, SegmentInput, StoreEarningsRequest};
 use crate::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, SttError, TranscribeOptions};
-
-// ── Constants ────────────────────────────────────────────────
 
 const MAX_FILE_SIZE_MB: u64 = 500;
 const ALLOWED_MIME_TYPES: [&str; 5] = [
@@ -18,8 +16,6 @@ const ALLOWED_MIME_TYPES: [&str; 5] = [
     "audio/x-m4a",
     "video/mp4",
 ];
-
-// ── Errors ───────────────────────────────────────────────────
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum IngestError {

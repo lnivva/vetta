@@ -5,6 +5,9 @@ post-processing pipeline using the `vetta` CLI.
 
 ## 1. Run the Pipeline
 
+Before running this command, make sure `MONGODB_URI` and `MONGODB_DATABASE` are set and the database indexes have been
+initialized.
+
 From the project root (where `Cargo.toml` lives):
 
 ```bash  
@@ -100,7 +103,7 @@ progress — the CLI may appear to hang until the models are cached locally.
 This usually means the Hugging Face auth token is missing or invalid. Pyannote requires a token with access to gated
 models.
 
-1. Ensure `diarization.enabled = true` and `diarization.hf_token` is set in your `config.toml`
+1. Ensure `diarization.enabled = true` and `model.hf_token` is set in your `config.toml`
 2. Verify you have accepted the model licenses on Hugging Face
 
 See the [STT Service guide](/guide/services/stt#3-configure-hugging-face-access) and

@@ -233,7 +233,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         diarization = None
         if diarization_future is not None:
             try:
-                assert diarization_future is not None
+                segments = list(segments)
                 diarization = diarization_future.result()
             except _INFERENCE_ERRORS:
                 logger.exception("Diarization failed")

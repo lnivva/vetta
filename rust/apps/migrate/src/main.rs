@@ -1,10 +1,11 @@
 use clap::Parser;
 use dotenvy::dotenv;
 use mongodb::IndexModel;
-use mongodb::bson::doc;
+use mongodb::bson::{Document, doc};
 use mongodb::options::IndexOptions;
+use std::collections::HashSet;
 use std::process;
-use tracing::{Level, error, info};
+use tracing::{Level, error, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
 use vetta_core::db::models::{EarningsCallDocument, EarningsChunkDocument};
@@ -96,12 +97,12 @@ async fn main() {
     if args.with_search {
         info!("Ensuring Atlas Search and Vector Search indexes...");
         if let Err(e) = apply_search_indexes(&db).await {
-            error!("Failed to create Atlas Search indexes.");
+            error!("Failed to ensure Atlas Search indexes.");
             error!("Are you running against a standard MongoDB container instead of Atlas?");
             error!("Details: {}", e);
             process::exit(1);
         }
-        info!("Atlas Search index creation triggered (building in background).");
+        info!("Atlas Search indexes successfully ensured.");
     } else {
         info!("Skipping Atlas Search indexes. Use --with-search to apply them.");
     }
@@ -172,9 +173,136 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
     Ok(())
 }
 
-/// Applies Atlas Search and Vector Search indexes using raw database commands.
+/// Retrieves the names of all existing search indexes on a collection using
+/// the `$listSearchIndexes` aggregation stage.
+async fn list_existing_search_indexes(
+    db: &Db,
+    collection: &str,
+) -> Result<HashSet<String>, mongodb::error::Error> {
+    use futures::TryStreamExt;
+
+    let coll = db.collection::<Document>(collection);
+
+    let pipeline = vec![doc! { "$listSearchIndexes": {} }];
+    let mut cursor = coll.aggregate(pipeline).await?;
+
+    let mut names = HashSet::new();
+    while let Some(index_doc) = cursor.try_next().await? {
+        if let Some(name) = index_doc.get_str("name").ok() {
+            names.insert(name.to_string());
+        }
+    }
+
+    Ok(names)
+}
+
+/// Creates a single search index on a collection.
+async fn create_search_index(
+    db: &Db,
+    collection: &str,
+    index: Document,
+) -> Result<(), mongodb::error::Error> {
+    let command = doc! {
+        "createSearchIndexes": collection,
+        "indexes": [index]
+    };
+    db.handle().run_command(command).await?;
+    Ok(())
+}
+
+/// Updates the definition of an existing search index by name.
+/// Requires MongoDB 6.0.7+ / Atlas.
+async fn update_search_index(
+    db: &Db,
+    collection: &str,
+    name: &str,
+    definition: Document,
+) -> Result<(), mongodb::error::Error> {
+    let command = doc! {
+        "updateSearchIndex": collection,
+        "name": name,
+        "definition": definition
+    };
+    db.handle().run_command(command).await?;
+    Ok(())
+}
+
+/// Ensures a single search index exists with the desired definition.
+/// If the index already exists it is updated in place; otherwise it is created.
+async fn ensure_search_index(
+    db: &Db,
+    collection: &str,
+    existing: &HashSet<String>,
+    index: Document,
+) -> Result<(), mongodb::error::Error> {
+    let name = index
+        .get_str("name")
+        .expect("search index document must have a 'name' field")
+        .to_string();
+
+    let definition = index
+        .get_document("definition")
+        .expect("search index document must have a 'definition' field")
+        .clone();
+
+    if existing.contains(&name) {
+        info!("Index '{}' already exists — updating definition...", name);
+        update_search_index(db, collection, &name, definition).await?;
+        info!(
+            "Index '{}' update triggered (rebuilding in background).",
+            name
+        );
+    } else {
+        info!("Index '{}' does not exist — creating...", name);
+        create_search_index(db, collection, index).await?;
+        info!(
+            "Index '{}' creation triggered (building in background).",
+            name
+        );
+    }
+
+    Ok(())
+}
+
+/// Applies Atlas Search and Vector Search indexes using a create-or-update
+/// pattern so the migration is safely rerunnable.
+///
+/// 1. Lists existing search indexes on the target collection.
+/// 2. For each desired index:
+///    - If an index with the same name already exists → `updateSearchIndex`
+///    - Otherwise → `createSearchIndexes`
 async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
-    // 1. Define the Vector Search Index
+    let existing = match list_existing_search_indexes(db, CHUNKS_COLLECTION).await {
+        Ok(names) => {
+            if names.is_empty() {
+                info!(
+                    "No existing search indexes found on '{}'.",
+                    CHUNKS_COLLECTION
+                );
+            } else {
+                info!(
+                    "Found {} existing search index(es) on '{}': {:?}",
+                    names.len(),
+                    CHUNKS_COLLECTION,
+                    names
+                );
+            }
+            names
+        }
+        Err(e) => {
+            // $listSearchIndexes may fail on non-Atlas deployments.  Warn and
+            // fall back to attempting creation (which will fail with a clear
+            // error if the index already exists).
+            warn!(
+                "Could not list existing search indexes ({}). \
+                 Falling back to create-only mode.",
+                e
+            );
+            HashSet::new()
+        }
+    };
+
+    // ── 1. Vector Search Index ───────────────────────────────────────────
     let vector_index = doc! {
         "name": "chunk_vector_index",
         "type": "vectorSearch",
@@ -192,7 +320,15 @@ async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         }
     };
 
-    // 2. Define the Full-Text Search Index
+    ensure_search_index(db, CHUNKS_COLLECTION, &existing, vector_index).await?;
+
+    // ── 2. Full-Text Search Index ────────────────────────────────────────
+    //
+    // Atlas Search static mappings require nested fields to be declared under
+    // a parent field with type "document".  Dot-notation keys like
+    // "speaker.name" at the top level of the fields object are not supported
+    // and will cause index creation to fail.  Instead, we declare "speaker"
+    // as a document containing its own "fields" map.
     let text_index = doc! {
         "name": "chunk_text_index",
         "type": "search",
@@ -208,27 +344,25 @@ async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                             "keyword": { "type": "string", "analyzer": "lucene.keyword" }
                         }
                     },
-                    "speaker.name": { "type": "string", "analyzer": "lucene.standard" },
+                    "speaker": {
+                        "type": "document",
+                        "fields": {
+                            "name": { "type": "string", "analyzer": "lucene.standard" },
+                            "role": { "type": "token" }
+                        }
+                    },
                     "ticker": { "type": "token" },
                     "year": { "type": "number" },
                     "quarter": { "type": "token" },
                     "sector": { "type": "token" },
                     "chunk_type": { "type": "token" },
-                    "speaker.role": { "type": "token" },
                     "call_date": { "type": "date" }
                 }
             }
         }
     };
 
-    // Construct the actual command payload
-    let command = doc! {
-        "createSearchIndexes": CHUNKS_COLLECTION,
-        "indexes": [vector_index, text_index]
-    };
-
-    // Execute the command against the database
-    db.handle().run_command(command).await?;
+    ensure_search_index(db, CHUNKS_COLLECTION, &existing, text_index).await?;
 
     Ok(())
 }

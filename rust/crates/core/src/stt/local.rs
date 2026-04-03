@@ -101,6 +101,7 @@ impl Stt for LocalSttStrategy {
                             end_time: w.end_time,
                             text: w.text,
                             confidence: w.confidence,
+                            speaker_id: w.speaker_id,
                         })
                         .collect(),
                 })

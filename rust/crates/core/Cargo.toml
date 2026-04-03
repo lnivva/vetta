@@ -15,7 +15,6 @@ tokio.workspace = true
 tokio-stream.workspace = true
 async-trait.workspace = true
 tonic.workspace = true
-tonic-prost.workspace = true
 tower.workspace = true
 prost.workspace = true
 hyper-util.workspace = true

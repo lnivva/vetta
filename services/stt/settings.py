@@ -2,7 +2,7 @@ import os
 import platform
 import subprocess
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, overload
 
@@ -34,7 +34,7 @@ class ModelConfig:
     download_dir: str
     device: Device
     compute_type: ComputeType
-    hf_token: str
+    hf_token: str = field(repr=False)
 
 
 @dataclass
@@ -426,6 +426,11 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         except ImportError:
             print(
                 "[config] huggingface_hub not installed; relying on HF_TOKEN env var."
+            )
+        except Exception as exc:
+            print(
+                f"[config] Hugging Face login failed ({exc}); "
+                f"falling back to HF_TOKEN env var."
             )
 
     _print_summary(settings)

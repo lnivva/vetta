@@ -24,6 +24,7 @@ pub struct Word {
     pub end_time: f32,
     pub text: String,
     pub confidence: f32,
+    pub speaker_id: String,
 }
 
 #[derive(Debug, Clone, Default)]

@@ -31,30 +31,35 @@ You must manually visit these two pages while logged into Hugging Face and click
 
 ## 3. Configuration
 
-The service is designed to read the token directly from your `config.toml`. This avoids the need to manage system-level
-environment variables.
+The service reads the Hugging Face token from the `[model]` section of your `config.toml`. This avoids the need to
+manage system-level environment variables.
 
-Open your `config.toml` and update the `[diarization]` section:
+Open your `config.toml` and set `hf_token` under `[model]`:
 
-```toml
+```toml  
+[model]
+hf_token = "hf_YOUR_TOKEN_HERE"
+
 [diarization]
 enabled = true
-hf_token = "hf_YOUR_TOKEN_HERE"  # Paste your token here
-model = "pyannote/speaker-diarization-3.1"
-required = true
-```
+model = "pyannote/speaker-diarization-3.1"  
+```  
+
+> **Note:** The `hf_token` field lives under `[model]`, not `[diarization]`. The `[diarization]` section controls
+> whether diarization is enabled and which pyannote model to use, but the token itself is a model-level concern shared
+> across components that need Hugging Face Hub access.
 
 ## 4. How it works in the Code
 
-When the `WhisperServicer` initializes, it checks if `hf_token` is populated in the settings. It then performs a
+When the `WhisperServicer` initializes, it checks if `hf_token` is populated in the model settings. It then performs a
 programmatic login:
 
-```python
-# From servicer.py
-if s.diarization.enabled and s.diarization.hf_token:
+```python  
+# From servicer.py  
+if s.diarization.enabled and s.model.hf_token:
     from huggingface_hub import login
 
-    login(token=s.diarization.hf_token)
+    login(token=s.model.hf_token)  
 ```
 
 This caches the credentials in `~/.cache/huggingface/`, allowing the diarization pipeline to download the necessary
@@ -65,7 +70,7 @@ weights securely.
 * **403 Forbidden:** This usually means you haven't accepted the terms for *both* the diarization and segmentation
   models mentioned in Step A.
 * **Unauthenticated Warning:** If you see `Warning: You are sending unauthenticated requests`, check that your
-  `config.toml` path is correct and the `hf_token` key is not empty.
+  `config.toml` path is correct and the `hf_token` key under `[model]` is not empty.
 * **Rate Limiting:** Without a token, Hugging Face severely limits download speeds and frequency, which may cause the
   service to hang during the first initialization.
 

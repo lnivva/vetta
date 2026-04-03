@@ -93,5 +93,5 @@ echo -e "${BOLD}═════════════════════�
 echo -e "${GREEN}${BOLD}  ✓ Setup Complete!${NC}"
 echo -e "${BOLD}═══════════════════════════════════════════${NC}"
 echo -e "  Piper and voices are ready in: ${BOLD}$PIPER_DIR${NC}"
-echo -e "  You can now run: ${BOLD}./_dev_script/gen_test_audio_linux.sh${NC}"
+echo -e "  You can now run: ${BOLD}./_dev_scripts/gen_test_audio_linux.sh${NC}"
 echo ""

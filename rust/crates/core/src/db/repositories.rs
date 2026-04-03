@@ -75,7 +75,8 @@ impl EarningsRepository {
     }
 
     /// Store a new call and all derived dialogue chunks in a single transaction.
-    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year))]
+    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year
+    ))]
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
         let (call_doc, turns) = build_call_and_turns(req, now);
@@ -104,7 +105,8 @@ impl EarningsRepository {
 
     /// Replace an existing call identified by its business key, deleting any
     /// old chunks before inserting the new transcript and chunk set.
-    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year))]
+    #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year
+    ))]
     pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
         let (call_doc, turns) = build_call_and_turns(req, now);
@@ -333,12 +335,71 @@ impl EarningsRepository {
         Ok(docs.into_iter().map(|d| d.id).collect())
     }
 
-    /// Delete a call and all of its associated chunks.
+    /// Delete a call and all of its associated chunks atomically.
+    ///
+    /// Both deletes run inside a multi-document transaction so the operation
+    /// either fully commits or fully aborts — no risk of orphaned chunks or
+    /// a call document left without its chunk set.
     #[instrument(skip(self))]
     pub async fn delete_call(&self, call_id: ObjectId) -> Result<(), DbError> {
         info!(call_id = %call_id, "Deleting call and associated chunks");
-        self.chunks.delete_many(doc! { "call_id": call_id }).await?;
-        self.calls.delete_one(doc! { "_id": call_id }).await?;
+
+        let mut session = self.client.start_session().await?;
+        session.start_transaction().await?;
+
+        match self.delete_in_transaction(&mut session, call_id).await {
+            Ok(()) => {
+                session.commit_transaction().await?;
+                info!(call_id = %call_id, "Successfully deleted call and all chunks");
+                Ok(())
+            }
+            Err(e) => {
+                error!(
+                    call_id = %call_id,
+                    error = %e,
+                    "Failed to delete call, aborting transaction"
+                );
+                let _ = session.abort_transaction().await;
+                Err(e)
+            }
+        }
+    }
+
+    /// Execute the two-collection delete inside an existing session/transaction.
+    ///
+    /// Chunks are removed first so that a transient failure never leaves
+    /// orphaned chunks behind (the call document still references them until
+    /// it is itself deleted).
+    async fn delete_in_transaction(
+        &self,
+        session: &mut mongodb::ClientSession,
+        call_id: ObjectId,
+    ) -> Result<(), DbError> {
+        let chunk_result = self
+            .chunks
+            .delete_many(doc! { "call_id": call_id })
+            .session(&mut *session)
+            .await?;
+
+        info!(
+            call_id = %call_id,
+            deleted_chunks = chunk_result.deleted_count,
+            "Removed associated chunks"
+        );
+
+        let call_result = self
+            .calls
+            .delete_one(doc! { "_id": call_id })
+            .session(&mut *session)
+            .await?;
+
+        if call_result.deleted_count == 0 {
+            warn!(
+                call_id = %call_id,
+                "No call document found for the given ID — chunks (if any) were still removed"
+            );
+        }
+
         Ok(())
     }
 }

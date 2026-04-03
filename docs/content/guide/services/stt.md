@@ -36,6 +36,7 @@ size = "large-v3"
 download_dir = "/tmp/whisper_models"
 device = "cpu" # Change to "cuda" if using a GPU
 compute_type = "int8"
+hf_token = "YOUR_HUGGING_FACE_TOKEN"
 
 [inference]
 beam_size = 5
@@ -54,7 +55,6 @@ num_workers = 1
 
 [diarization]
 enabled = true
-hf_token = "YOUR_HUGGING_FACE_TOKEN" # Required for speaker attribution
 model = "pyannote/speaker-diarization-3.1"
 device = "cpu" # Align with model.device
 min_speakers = 0
@@ -72,7 +72,7 @@ For a detailed breakdown of every configuration property, see the [Configuration
 ### 3. Configure Hugging Face Access
 
 Since the service relies on protected models for diarization, you must ensure your Hugging Face authentication is
-configured correctly and the token is added to your config.
+configured correctly and the token is added under `[model].hf_token` in your config.
 
 ## Running the Service
 

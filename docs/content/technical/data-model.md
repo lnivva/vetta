@@ -9,7 +9,7 @@ retrieval.
 
 The model uses **two collections**:
 
-* **`earnings_calls`** — one document per call; the immutable source of truth.
+* **`earnings_calls`** — one document per call; the authoritative source of truth.
 * **`earnings_chunks`** — one document per dialogue turn; the search-optimized unit.
 
 This separation allows chunking strategies and embedding models to evolve independently of the source transcript.
@@ -33,7 +33,7 @@ Post-processing (speaker assignment, stitching, normalization)
           │
           ▼
 ┌──────────────────────┐
-│   earnings_calls     │  ← Source of truth. No embeddings.
+│   earnings_calls     │  ← Authoritative source of truth. No embeddings.
 │   (one doc per call) │
 └──────────┬───────────┘
            │  chunking + embedding
@@ -63,7 +63,8 @@ Post-processing (speaker assignment, stitching, normalization)
 ### Purpose
 
 Stores one document per earnings call. Acts as the authoritative record of the transcript and speaker attribution.
-Contains **no embeddings**.
+Contains **no embeddings**. Documents may be replaced or deleted through the repository layer, but this collection
+remains the single source of truth from which all chunks are derived.
 
 ### Schema
 
@@ -320,7 +321,9 @@ ANN) search can accurately narrow candidates **before** distance computation.
 
 ### 2. Atlas Search Index (Full-Text)
 
-This index handles full-text keyword matching, fuzzy matching, and exact phrase matching.
+This index handles full-text keyword matching, fuzzy matching, and exact phrase matching. Note that `speaker` is
+declared as a `document` type containing its own `fields` — Atlas Search static mappings require nested fields to be
+structured this way rather than using dot-notation keys at the top level.
 
 ```json
 {
@@ -339,9 +342,17 @@ This index handles full-text keyword matching, fuzzy matching, and exact phrase 
           }
         }
       },
-      "speaker.name": {
-        "type": "string",
-        "analyzer": "lucene.standard"
+      "speaker": {
+        "type": "document",
+        "fields": {
+          "name": {
+            "type": "string",
+            "analyzer": "lucene.standard"
+          },
+          "role": {
+            "type": "token"
+          }
+        }
       },
       "ticker": {
         "type": "token"
@@ -358,9 +369,6 @@ This index handles full-text keyword matching, fuzzy matching, and exact phrase 
       "chunk_type": {
         "type": "token"
       },
-      "speaker.role": {
-        "type": "token"
-      },
       "call_date": {
         "type": "date"
       }
@@ -373,6 +381,9 @@ This index handles full-text keyword matching, fuzzy matching, and exact phrase 
 
 * **Analyzers:** `lucene.english` is used on `text` to enable word stemming (e.g., "running" matches "run").
   `lucene.standard` is used on `speaker.name` to avoid altering human names.
+* **Nested Document Mapping:** The `speaker` field is declared with `"type": "document"` so that its sub-fields (`name`,
+  `role`) are correctly indexed. Using dot-notation keys like `"speaker.name"` at the top level of a static mapping is
+  not supported by Atlas Search and will cause index creation to fail.
 * **Fuzzy Matching:** Inherently supported at query time by the text index. No special configuration is required here.
 * **Keyword Multi-field:** The `text.keyword` sub-field bypasses the English stemmer, indexing exact phrasing. This is
   critical when searching for non-standard financial acronyms or exact quotes.
@@ -572,3 +583,5 @@ ingested → transcribed → processed
 | **New diarization model**       | Rerun diarization, update `transcript.segments[].speaker_id`, and re-resolve the `speakers` registry.                                                                   |
 | **Custom Financial Synonyms**   | Create a synonym mapping collection in Atlas Search (e.g., "CAPEX" to "capital expenditures") and attach it to the `lucene.english` analyzer in the `chunk_text_index`. |
 | **Additional metadata**         | Add fields to `earnings_chunks` and register them as `token` or `filter` mappings in the relevant index definitions.                                                    |
+
+```
