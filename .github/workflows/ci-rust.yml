@@ -4,22 +4,22 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - "apps/**"
-      - "crates/**"
+      - "../../rust/apps/**"
+      - "../../rust/crates/**"
       - "proto/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
+      - "../../rust/Cargo.toml"
+      - "../../rust/Cargo.lock"
+      - "../../rust/rust-toolchain.toml"
       - ".github/workflows/ci-rust.yml"
   pull_request:
     branches: [ "main" ]
     paths:
-      - "apps/**"
-      - "crates/**"
+      - "../../rust/apps/**"
+      - "../../rust/crates/**"
       - "proto/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
+      - "../../rust/Cargo.toml"
+      - "../../rust/Cargo.lock"
+      - "../../rust/rust-toolchain.toml"
       - ".github/workflows/ci-rust.yml"
 
 env:

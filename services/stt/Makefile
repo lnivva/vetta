@@ -1,4 +1,4 @@
-PROTO_DIR = ../../../proto
+PROTO_DIR = ../../proto
 PROTO_OUT = .
 
 PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
