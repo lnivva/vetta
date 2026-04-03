@@ -10,8 +10,13 @@ dependencies = [
     "psutil==7.2.2",
     "requests==2.33.0",
     "python-json-logger==4.0.0",
-    "pyannote.audio==4.0.4",
+    "pyannote-audio==4.0.4",
     "ctranslate2==4.7.1",
+    "torch>=2.11.0",
+    "nvidia-cuda-nvrtc>=13.0.88",
+    "nvidia-cuda-runtime>=13.0.96",
+    "nvidia-npp>=13.1.0.44",
+    "nvidia-cublas>=13.1.0.3",
 ]
 
 [dependency-groups]
