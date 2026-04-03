@@ -193,7 +193,7 @@ async fn list_existing_search_indexes(
 
     let mut names = HashSet::new();
     while let Some(index_doc) = cursor.try_next().await? {
-        if let Some(name) = index_doc.get_str("name").ok() {
+        if let Ok(name) = index_doc.get_str("name") {
             names.insert(name.to_string());
         }
     }

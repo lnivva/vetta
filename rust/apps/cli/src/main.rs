@@ -9,7 +9,7 @@ use clap::Parser;
 use context::AppContext;
 use miette::{Result, set_panic_hook};
 use std::process::Command;
-use tracing::{info, error};
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
