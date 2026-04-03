@@ -12,6 +12,11 @@ dependencies = [
     "python-json-logger==4.0.0",
     "pyannote-audio==4.0.4",
     "ctranslate2==4.7.1",
+    "nvidia-cuda-runtime-cu12",
+    "nvidia-cublas-cu12",
+    "nvidia-cudnn-cu12",
+    "nvidia-curand-cu12",
+    "nvidia-cuda-nvrtc-cu12"
 ]
 
 [dependency-groups]
