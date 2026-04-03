@@ -5,19 +5,18 @@ PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 VENV_DIR = .venv
 VENV_SENTINEL = $(VENV_DIR)/.sentinel
 
-# Dynamically construct the NVIDIA library paths within the venv
-NVIDIA_LIBS = $(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cublas/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cudnn/lib
+NVIDIA_LIBS = $(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cublas/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cudnn/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_runtime/lib
 
 .PHONY: all run proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv clean-venv fresh-venv
 
 all: proto
 
-run: $(VENV_SENTINEL)
+run: $(VENV_SENTINEL) setup
 	@echo "Starting service with CUDA 12 isolation..."
 	@LD_LIBRARY_PATH=$(NVIDIA_LIBS):$(LD_LIBRARY_PATH) \
 	uv run python main.py --config config.toml
 
-# ── Normal setup (fast, incremental) ────────────────────────────────
+# ── Normal setup ─────────────────────────────────────────────────────
 $(VENV_SENTINEL): pyproject.toml uv.lock
 	@echo "Syncing venv with uv..."
 	uv sync
@@ -25,7 +24,7 @@ $(VENV_SENTINEL): pyproject.toml uv.lock
 
 venv: $(VENV_SENTINEL)
 
-# ── Nuclear option (full rebuild) ───────────────────────────────────
+# ── Nuclear option ───────────────────────────────────────────────────
 clean-venv:
 	@echo "Removing venv entirely..."
 	rm -rf $(VENV_DIR)
