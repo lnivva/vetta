@@ -37,10 +37,15 @@ async fn main() {
     info!("Starting vetta_migrate database initialization...");
 
     // 3. Load environment variables
-    if dotenv().is_ok() {
-        info!("Loaded environment variables from .env file");
-    } else {
-        info!("No .env file found, relying on system environment variables");
+    match dotenv() {
+        Ok(path) => info!("Loaded environment variables from {}", path.display()),
+        Err(e) if e.not_found() => {
+            info!("No .env file found, relying on system environment variables");
+        }
+        Err(e) => {
+            error!("Failed to load .env file: {}", e);
+            process::exit(1);
+        }
     }
 
     // 4. Strict Environment Variable Check

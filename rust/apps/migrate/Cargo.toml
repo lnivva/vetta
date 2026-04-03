@@ -7,6 +7,10 @@ authors.workspace = true
 license.workspace = true
 description.workspace = true
 
+[[bin]]
+name = "vetta_migrate"
+path = "src/main.rs"
+
 [dependencies]
 # Internal workspace dependencies
 vetta_core = { path = "../../crates/core" }

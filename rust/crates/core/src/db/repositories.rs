@@ -114,34 +114,8 @@ impl EarningsRepository {
         let mut session = self.client.start_session().await?;
         session.start_transaction().await?;
 
-        if let Some(existing) = self
-            .calls
-            .find_one(doc! {
-                "ticker": &call_doc.ticker,
-                "year": call_doc.year as i32,
-                "quarter": &call_doc.quarter,
-            })
-            .session(&mut session)
-            .await?
-        {
-            let call_id = existing.id.expect("existing must have id");
-            warn!(call_id = %call_id, "Found existing call for business key, replacing...");
-
-            self.chunks
-                .delete_many(doc! { "call_id": call_id })
-                .session(&mut session)
-                .await?;
-
-            self.calls
-                .delete_one(doc! { "_id": call_id })
-                .session(&mut session)
-                .await?;
-        }
-
-        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
-
         match self
-            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
+            .replace_in_transaction(&mut session, call_doc, &turns, now)
             .await
         {
             Ok(call_id) => {
@@ -155,6 +129,46 @@ impl EarningsRepository {
                 Err(e)
             }
         }
+    }
+
+    /// Execute the full replace logic — lookup, delete old data, insert new —
+    /// inside an existing session/transaction so that any `?` failure is
+    /// caught by the caller's abort path.
+    async fn replace_in_transaction(
+        &self,
+        session: &mut mongodb::ClientSession,
+        call_doc: EarningsCallDocument,
+        turns: &[DialogueTurn],
+        now: DateTime,
+    ) -> Result<ObjectId, DbError> {
+        if let Some(existing) = self
+            .calls
+            .find_one(doc! {
+                "ticker": &call_doc.ticker,
+                "year": call_doc.year as i32,
+                "quarter": &call_doc.quarter,
+            })
+            .session(&mut *session)
+            .await?
+        {
+            let call_id = existing.id.expect("existing must have id");
+            warn!(call_id = %call_id, "Found existing call for business key, replacing...");
+
+            self.chunks
+                .delete_many(doc! { "call_id": call_id })
+                .session(&mut *session)
+                .await?;
+
+            self.calls
+                .delete_one(doc! { "_id": call_id })
+                .session(&mut *session)
+                .await?;
+        }
+
+        let ctx = StoreTransactionContext::from_doc(&call_doc, now);
+
+        self.store_in_transaction(session, &ctx, call_doc, turns)
+            .await
     }
 
     async fn store_in_transaction(

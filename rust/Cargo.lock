@@ -2686,6 +2686,7 @@ dependencies = [
  "terminal_size",
  "textwrap",
  "tokio",
+ "tracing",
  "vetta_core",
 ]
 

@@ -5,23 +5,22 @@ recordings into analysis-ready, time-aligned transcripts.
 
 ## Local Setup
 
-The local STT service is designed for performance and data confidentiality. It is typically executed within its specific
-service directory.
+The local STT service is designed for performance and data confidentiality. All commands are run from the **repository
+root** using [just](https://github.com/casey/just).
 
 ### 1. Install Dependencies
 
-Navigate to the STT local service directory and use the provided `Makefile` to set up the Python environment and
-dependencies:
+From the repository root, run the setup command which synchronizes the Python virtual environment and generates the
+required protobuf/gRPC code:
 
 ```bash
-cd services/stt/local/
-make setup
+just stt-setup  
 ```
 
 ### 2. Configuration (`config.toml`)
 
-The service requires a `config.toml` file in the service directory to define model parameters, hardware usage, and
-diarization settings.
+The service requires a `config.toml` file in `services/stt/` to define model parameters, hardware usage, and diarization
+settings.
 
 Create or update your `config.toml` with the following recommended structure:
 
@@ -34,7 +33,7 @@ max_audio_size_mb = 100
 [model]
 size = "large-v3"
 download_dir = "/tmp/whisper_models"
-device = "cpu" # Change to "cuda" if using a GPU
+device = "cpu" # Change to "cuda" if using a GPU  
 compute_type = "int8"
 hf_token = "YOUR_HUGGING_FACE_TOKEN"
 
@@ -76,13 +75,31 @@ configured correctly and the token is added under `[model].hf_token` in your con
 
 ## Running the Service
 
-The STT service is executed using `uv` to manage the Python environment.
+From the repository root:
 
-To start the service, run:
+```bash  
+just stt-run  
+```  
 
-```bash
-uv run python main.py --config config.toml
-```
+This starts the service with the correct CUDA library isolation (if applicable).
+
+## Available Commands
+
+Run `just --list` to see all available commands. Key STT commands:
+
+| Command                     | Description                           |  
+|-----------------------------|---------------------------------------|  
+| `just stt-setup`            | Sync venv and generate protobuf code  |  
+| `just stt-run`              | Start the STT service                 |  
+| `just stt-test`             | Run all tests                         |  
+| `just stt-test-unit`        | Run unit tests only                   |  
+| `just stt-test-integration` | Run integration tests only            |  
+| `just stt-format`           | Format code with Ruff                 |  
+| `just stt-format-check`     | Check formatting (CI)                 |  
+| `just stt-lint`             | Lint with Ruff                        |  
+| `just stt-typecheck`        | Type-check with mypy                  |  
+| `just stt-clean`            | Remove all build artifacts            |  
+| `just stt-fresh-venv`       | Delete and recreate venv from scratch |  
 
 ## Key Features
 
@@ -95,6 +112,8 @@ uv run python main.py --config config.toml
   through a cloud API.
 
 ::: tip Performance
+
 For significantly faster Whisper inference, it is recommended to update the `device` settings in `config.toml` to `cuda`
 and run this service on a machine with an NVIDIA GPU.
+
 :::

@@ -115,6 +115,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     end_time=w.end,
                     text=w.word,
                     confidence=w.probability,
+                    speaker_id=speaker_id,
                 )
                 for w in (segment.words or [])
             ],
@@ -122,7 +123,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     @staticmethod
     def _words_to_chunk(
-        words: list, speaker_id: str, confidence: float
+            words: list, speaker_id: str, confidence: float
     ) -> speech_pb2.TranscriptChunk:
         """
         Helper to create a protobuf transcript chunk from a sub-list of words.
@@ -140,6 +141,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
                     end_time=w.end,
                     text=w.word,
                     confidence=w.probability,
+                    speaker_id=speaker_id,
                 )
                 for w in words
             ],
@@ -233,7 +235,6 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         diarization = None
         if diarization_future is not None:
             try:
-                segments = list(segments)
                 diarization = diarization_future.result()
             except _INFERENCE_ERRORS:
                 logger.exception("Diarization failed")
