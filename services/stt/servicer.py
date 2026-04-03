@@ -123,7 +123,7 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
 
     @staticmethod
     def _words_to_chunk(
-            words: list, speaker_id: str, confidence: float
+        words: list, speaker_id: str, confidence: float
     ) -> speech_pb2.TranscriptChunk:
         """
         Helper to create a protobuf transcript chunk from a sub-list of words.
