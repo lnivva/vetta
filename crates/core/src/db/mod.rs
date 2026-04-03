@@ -1,7 +1,7 @@
 mod config;
 mod connection;
 mod error;
-mod models;
+pub mod models;
 mod repositories;
 
 pub use config::DbConfig;

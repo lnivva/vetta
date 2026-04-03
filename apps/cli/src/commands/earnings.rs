@@ -9,6 +9,7 @@ use crate::{
     reporter::PipelineReporter,
 };
 
+use vetta_core::db::{Db, DbConfig};
 use vetta_core::domain::Quarter as CoreQuarter;
 use vetta_core::earnings_processor::{EarningsProcessor, ProcessRequest};
 
@@ -70,8 +71,11 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
 
     let file = std::fs::canonicalize(&file).into_diagnostic()?;
 
+    let db_config = DbConfig::from_env().into_diagnostic()?;
+    let db = Db::connect(&db_config).await.into_diagnostic()?;
     let stt = factory::build_stt(ctx).await?;
-    let processor = EarningsProcessor::from_env(stt).await.into_diagnostic()?;
+
+    let processor = EarningsProcessor::new(stt, db);
 
     let output_mode = match (print, out.is_some()) {
         (true, true) => OutputMode::Both,

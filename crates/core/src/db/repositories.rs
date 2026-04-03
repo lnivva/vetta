@@ -8,8 +8,7 @@ use tracing::{error, info, instrument, warn};
 
 use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
-use mongodb::options::IndexOptions;
-use mongodb::{Client, Collection, IndexModel};
+use mongodb::{Client, Collection};
 
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
@@ -73,70 +72,6 @@ impl EarningsRepository {
             calls: db.collection(CALLS_COLLECTION),
             chunks: db.collection(CHUNKS_COLLECTION),
         }
-    }
-
-    /// Ensure all standard B-Tree collection indexes are present.
-    ///
-    /// Note: Atlas Search (`$search`) and Vector Search (`$vectorSearch`) indexes
-    /// are strictly managed outside the application via Infrastructure as Code (Terraform).
-    #[instrument(skip(self), name = "ensure_standard_indexes")]
-    pub async fn ensure_indexes(&self) -> Result<(), DbError> {
-        info!("Ensuring standard MongoDB B-Tree indexes exist...");
-
-        self.calls
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "ticker": 1, "year": 1, "quarter": 1 })
-                    .options(IndexOptions::builder().unique(true).build())
-                    .build(),
-            )
-            .await?;
-
-        self.calls
-            .create_index(IndexModel::builder().keys(doc! { "call_date": -1 }).build())
-            .await?;
-
-        self.calls
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "company.sector": 1, "call_date": -1 })
-                    .build(),
-            )
-            .await?;
-
-        self.calls
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "status": 1, "updated_at": -1 })
-                    .build(),
-            )
-            .await?;
-
-        self.chunks
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "call_id": 1, "chunk_index": 1 })
-                    .build(),
-            )
-            .await?;
-
-        self.chunks
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "ticker": 1, "call_date": -1 })
-                    .build(),
-            )
-            .await?;
-
-        self.chunks
-            .create_index(
-                IndexModel::builder()
-                    .keys(doc! { "model_version": 1 })
-                    .build(),
-            )
-            .await?;
-
-        Ok(())
     }
 
     /// Store a new call and all derived dialogue chunks in a single transaction.

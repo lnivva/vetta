@@ -3,7 +3,7 @@ resolver = "2"
 members = [
     "crates/core",
     "apps/cli"
-]
+, "apps/migrate"]
 
 [workspace.package]
 version = "0.1.0"
@@ -44,6 +44,7 @@ terminal_size = "0.4.3"
 config = "0.15.22"
 futures = "0.3.32"
 tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [profile.dev]
 opt-level = 0

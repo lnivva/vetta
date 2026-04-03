@@ -2,8 +2,9 @@ use miette::Diagnostic;
 use std::fs;
 use std::path::Path;
 use thiserror::Error;
+use tokio_stream::StreamExt; // <-- Moved to the top
 
-use crate::db::{Db, DbConfig, DbError, EarningsRepository, SegmentInput, StoreEarningsRequest};
+use crate::db::{Db, DbError, EarningsRepository, SegmentInput, StoreEarningsRequest};
 use crate::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, SttError, TranscribeOptions};
 
@@ -163,24 +164,9 @@ pub struct EarningsProcessor {
 }
 
 impl EarningsProcessor {
+    /// Create a new processor. The `Db` is injected from the application layer.
     pub fn new(stt: Box<dyn Stt>, db: Db) -> Self {
         Self { stt, db }
-    }
-
-    pub async fn from_env(stt: Box<dyn Stt>) -> Result<Self, PipelineError> {
-        let db_config = DbConfig::from_env().map_err(|e| PipelineError::Database(e.to_string()))?;
-
-        let db = Db::connect(&db_config)
-            .await
-            .map_err(|e| PipelineError::Database(e.to_string()))?;
-
-        // Ensure indexes on startup
-        let repo = EarningsRepository::new(&db);
-        repo.ensure_indexes()
-            .await
-            .map_err(|e| PipelineError::Database(e.to_string()))?;
-
-        Ok(Self { stt, db })
     }
 
     /// Runs the full pipeline, yielding progress events through a callback.
@@ -211,7 +197,6 @@ impl EarningsProcessor {
 
         let mut segments: Vec<TranscriptSegment> = Vec::new();
 
-        use tokio_stream::StreamExt;
         while let Some(result) = stream.next().await {
             let chunk = result?;
 
