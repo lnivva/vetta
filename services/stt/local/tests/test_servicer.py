@@ -39,7 +39,11 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
             max_audio_size_mb=10,
         ),
         model=ModelConfig(
-            size="small", download_dir=str(tmp_dir), device="cpu", compute_type="int8"
+            size="small",
+            download_dir=str(tmp_dir),
+            device="cpu",
+            compute_type="int8",
+            hf_token="",  # Moved here
         ),
         inference=InferenceConfig(**inference_defaults),
         concurrency=ConcurrencyConfig(max_workers=1, cpu_threads=2, num_workers=1),
@@ -47,7 +51,6 @@ def make_settings(tmp_dir: Path, **inference_overrides) -> Settings:
             model="pyannote/speaker-diarization-3.1",
             max_speakers=0,
             min_speakers=0,
-            hf_token="",
             enabled=False,
             device="cuda",
         ),

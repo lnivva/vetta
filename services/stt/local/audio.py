@@ -2,7 +2,7 @@
 Audio loading, validation, and preprocessing.
 
 Handles resolution of audio from multiple sources (file paths, raw bytes,
-remote URIs) and normalisation to the format expected by downstream
+remote URIs) and normalization to the format expected by downstream
 models (16 kHz mono float32 numpy arrays).
 """
 

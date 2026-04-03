@@ -80,6 +80,7 @@ class TestConfigLoading:
         assert s.model.size == "small"
         assert s.model.device == "cpu"
         assert s.model.compute_type == "int8"
+        assert s.model.hf_token == ""
 
     def test_loads_valid_config_inference(self, minimal_config):
         s = load_settings(minimal_config)
@@ -111,9 +112,6 @@ class TestConfigLoading:
     def test_diarization_defaults_to_disabled(self, minimal_config):
         s = load_settings(minimal_config)
         assert s.diarization.enabled is False
-        assert s.diarization.hf_token == ""
-
-    # ── Env Overrides ─────────────────────────────────────────────
 
 
 class TestEnvOverrides:
@@ -122,20 +120,17 @@ class TestEnvOverrides:
     def test_env_overrides_model_size(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_MODEL_SIZE", "medium")
         s = load_settings(minimal_config)
-        # TOML says "small", env says "medium" — env must win
         assert s.model.size == "medium"
 
     def test_env_overrides_address(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_SERVICE_ADDRESS", "0.0.0.0:9999")
         s = load_settings(minimal_config)
-        # TOML says unix socket, env says TCP — env must win
         assert s.service.address == "0.0.0.0:9999"
         assert s.service.is_unix_socket is False
 
     def test_env_overrides_bool_false(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_INFERENCE_VAD_FILTER", "false")
         s = load_settings(minimal_config)
-        # TOML says true, env says false — env must win
         assert s.inference.vad_filter is False
 
     def test_env_overrides_bool_true(self, minimal_config, monkeypatch):
@@ -146,13 +141,11 @@ class TestEnvOverrides:
     def test_env_overrides_float(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_INFERENCE_NO_SPEECH_THRESHOLD", "0.9")
         s = load_settings(minimal_config)
-        # TOML says 0.6, env says 0.9 — env must win
         assert s.inference.no_speech_threshold == pytest.approx(0.9)
 
     def test_env_overrides_int(self, minimal_config, monkeypatch):
         monkeypatch.setenv("WHISPER_CONCURRENCY_CPU_THREADS", "16")
         s = load_settings(minimal_config)
-        # TOML says 2, env says 16 — env must win
         assert s.concurrency.cpu_threads == 16
 
     def test_env_override_does_not_affect_other_fields(
@@ -162,12 +155,9 @@ class TestEnvOverrides:
         monkeypatch.setenv("WHISPER_MODEL_SIZE", "tiny")
         s = load_settings(minimal_config)
         assert s.model.size == "tiny"
-        # Everything else should remain at TOML values
         assert s.model.device == "cpu"
         assert s.inference.beam_size == 3
         assert s.concurrency.cpu_threads == 2
-
-    # ── Hardware Detection ────────────────────────────────────────
 
 
 class TestDeviceResolution:

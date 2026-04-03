@@ -82,8 +82,13 @@ class DiarizationPipeline:
     """Lazy-loading wrapper for the pyannote diarization pipeline."""
 
     def __init__(self, config: DiarizationConfig):
-        if not config.hf_token:
-            raise ValueError("Diarization enabled but no HuggingFace token configured.")
+        import os
+
+        hf_token = os.environ.get("HF_TOKEN")
+        if not hf_token:
+            logger.warning(
+                "No HF_TOKEN found in environment. Diarization may fail if the model is private."
+            )
 
         logger.info(
             "Loading diarization pipeline",
@@ -102,7 +107,7 @@ class DiarizationPipeline:
 
         pipeline = Pipeline.from_pretrained(
             config.model,
-            token=config.hf_token,
+            token=hf_token if hf_token else True,
         )
 
         if pipeline is None:

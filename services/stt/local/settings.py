@@ -34,6 +34,7 @@ class ModelConfig:
     download_dir: str
     device: Device
     compute_type: ComputeType
+    hf_token: str
 
 
 @dataclass
@@ -60,7 +61,6 @@ class DiarizationConfig:
     """Configuration for the optional pyannote speaker-diarization pipeline."""
 
     enabled: bool
-    hf_token: str
     model: str
     device: Device
     min_speakers: int  # 0 = auto
@@ -357,6 +357,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             ),
             device=device,
             compute_type=compute_type,
+            hf_token=_env("model", "hf_token", str(mdl.get("hf_token", ""))),
         ),
         inference=InferenceConfig(
             beam_size=_env("inference", "beam_size", int(inf.get("beam_size", 5))),
@@ -366,7 +367,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             vad_min_silence_ms=_env(
                 "inference",
                 "vad_min_silence_ms",
-                int(inf.get("vad_min_silence_ms", 500)),
+                int(inf.get("vad_min_silence_ms", 300)),
             ),
             no_speech_threshold=_env(
                 "inference",
@@ -376,12 +377,12 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             log_prob_threshold=_env(
                 "inference",
                 "log_prob_threshold",
-                float(inf.get("log_prob_threshold", -1.0)),
+                float(inf.get("log_prob_threshold", -0.5)),
             ),
             compression_ratio_threshold=_env(
                 "inference",
                 "compression_ratio_threshold",
-                float(inf.get("compression_ratio_threshold", 2.4)),
+                float(inf.get("compression_ratio_threshold", 2.0)),
             ),
             word_timestamps=_env(
                 "inference", "word_timestamps", bool(inf.get("word_timestamps", True))
@@ -398,8 +399,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             ),
         ),
         diarization=DiarizationConfig(
-            enabled=_env("diarization", "enabled", bool(dia.get("enabled", False))),
-            hf_token=_env("diarization", "hf_token", str(dia.get("hf_token", ""))),
+            enabled=_env("diarization", "enabled", bool(dia.get("enabled", True))),
             model=_env(
                 "diarization",
                 "model",
@@ -415,6 +415,19 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         ),
     )
 
+    hf_token = settings.model.hf_token
+    if hf_token:
+        os.environ["HF_TOKEN"] = hf_token
+        try:
+            from huggingface_hub import login
+
+            login(token=hf_token)
+            print("[config] Successfully logged into Hugging Face Hub.")
+        except ImportError:
+            print(
+                "[config] huggingface_hub not installed; relying on HF_TOKEN env var."
+            )
+
     _print_summary(settings)
     return settings
 
@@ -426,6 +439,7 @@ def _print_summary(s: Settings):
     print(f"  Device         : {s.model.device}")
     print(f"  Compute type   : {s.model.compute_type}")
     print(f"  Model          : {s.model.size}")
+    print(f"  HF Token       : {'<configured>' if s.model.hf_token else '<missing>'}")
     print(f"  CPU threads    : {s.concurrency.cpu_threads}")
     print(f"  Max workers    : {s.concurrency.max_workers}")
     print(f"  Address        : {s.service.address}")
