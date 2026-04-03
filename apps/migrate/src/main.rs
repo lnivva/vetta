@@ -1,3 +1,4 @@
+use clap::Parser;
 use dotenvy::dotenv;
 use mongodb::IndexModel;
 use mongodb::bson::doc;
@@ -12,9 +13,21 @@ use vetta_core::db::{Db, DbConfig};
 const CALLS_COLLECTION: &str = "earnings_calls";
 const CHUNKS_COLLECTION: &str = "earnings_chunks";
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Also create Atlas Search and Vector Search indexes.
+    /// Note: This will fail if not running against an Atlas cluster or Atlas Local CLI.
+    #[arg(long, default_value_t = false)]
+    with_search: bool,
+}
+
 #[tokio::main]
 async fn main() {
-    // 1. Initialize logging
+    // 1. Parse CLI arguments
+    let args = Args::parse();
+
+    // 2. Initialize logging
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
         .finish();
@@ -22,17 +35,16 @@ async fn main() {
 
     info!("Starting vetta_migrate database initialization...");
 
-    // 2. Load environment variables (useful for local development)
+    // 3. Load environment variables
     if dotenv().is_ok() {
         info!("Loaded environment variables from .env file");
     } else {
         info!("No .env file found, relying on system environment variables");
     }
 
-    // 3. Strict Environment Variable Check
+    // 4. Strict Environment Variable Check
     let config = match DbConfig::from_env() {
         Ok(c) => {
-            // Log safely (don't print passwords in CI/CD logs)
             let safe_uri = if c.uri.contains('@') {
                 "mongodb://***@***".to_string()
             } else {
@@ -51,7 +63,7 @@ async fn main() {
         }
     };
 
-    // 4. Connect to MongoDB
+    // 5. Connect to MongoDB
     info!("Initializing MongoDB client...");
     let db = match Db::connect(&config).await {
         Ok(db) => db,
@@ -61,7 +73,7 @@ async fn main() {
         }
     };
 
-    // 5. Explicitly Ping the Database (Pre-flight check)
+    // 6. Explicitly Ping the Database
     info!("Pinging database to verify connection...");
     match db.handle().run_command(doc! { "ping": 1 }).await {
         Ok(_) => info!("Database connection verified successfully."),
@@ -72,28 +84,37 @@ async fn main() {
         }
     }
 
-    // 6. Run the B-Tree index migrations
+    // 7. Run the B-Tree index migrations
     info!("Ensuring standard B-Tree indexes exist on collections...");
-    if let Err(e) = apply_indexes(&db).await {
-        error!("Failed to create indexes: {}", e);
+    if let Err(e) = apply_standard_indexes(&db).await {
+        error!("Failed to create standard indexes: {}", e);
         process::exit(1);
     }
+    info!("Standard indexes successfully verified/created.");
 
-    // Reminder for Atlas-specific indexes
-    info!(
-        "Note: Vector Search and Full-Text Search indexes should be applied via IaC (Terraform)."
-    );
+    // 8. Conditionally run Atlas Search index migrations
+    if args.with_search {
+        info!("Ensuring Atlas Search and Vector Search indexes...");
+        if let Err(e) = apply_search_indexes(&db).await {
+            error!("Failed to create Atlas Search indexes.");
+            error!("Are you running against a standard MongoDB container instead of Atlas?");
+            error!("Details: {}", e);
+            process::exit(1);
+        }
+        info!("Atlas Search index creation triggered (building in background).");
+    } else {
+        info!("Skipping Atlas Search indexes. Use --with-search to apply them.");
+    }
+
     info!("Database migration completed successfully.");
 }
 
 /// Applies all required standard MongoDB B-Tree indexes to the database.
-async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
+async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
     let calls = db.collection::<EarningsCallDocument>(CALLS_COLLECTION);
     let chunks = db.collection::<EarningsChunkDocument>(CHUNKS_COLLECTION);
 
     // --- earnings_calls indexes ---
-
-    // Unique business key
     calls
         .create_index(
             IndexModel::builder()
@@ -103,12 +124,10 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         )
         .await?;
 
-    // Temporal queries
     calls
         .create_index(IndexModel::builder().keys(doc! { "call_date": -1 }).build())
         .await?;
 
-    // Sector temporal queries
     calls
         .create_index(
             IndexModel::builder()
@@ -117,7 +136,6 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         )
         .await?;
 
-    // Pipeline status tracking
     calls
         .create_index(
             IndexModel::builder()
@@ -127,8 +145,6 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         .await?;
 
     // --- earnings_chunks indexes ---
-
-    // Parent reference and chunk ordering
     chunks
         .create_index(
             IndexModel::builder()
@@ -137,7 +153,6 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         )
         .await?;
 
-    // Denormalized temporal queries
     chunks
         .create_index(
             IndexModel::builder()
@@ -146,7 +161,6 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
         )
         .await?;
 
-    // Embedding model tracking (for pipeline upgrades)
     chunks
         .create_index(
             IndexModel::builder()
@@ -154,6 +168,67 @@ async fn apply_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .build(),
         )
         .await?;
+
+    Ok(())
+}
+
+/// Applies Atlas Search and Vector Search indexes using raw database commands.
+async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
+    // 1. Define the Vector Search Index
+    let vector_index = doc! {
+        "name": "chunk_vector_index",
+        "type": "vectorSearch",
+        "definition": {
+            "fields": [
+                { "path": "embedding", "type": "vector", "numDimensions": 1024, "similarity": "cosine" },
+                { "path": "ticker", "type": "filter" },
+                { "path": "year", "type": "filter" },
+                { "path": "quarter", "type": "filter" },
+                { "path": "sector", "type": "filter" },
+                { "path": "chunk_type", "type": "filter" },
+                { "path": "speaker.role", "type": "filter" },
+                { "path": "call_date", "type": "filter" }
+            ]
+        }
+    };
+
+    // 2. Define the Full-Text Search Index
+    let text_index = doc! {
+        "name": "chunk_text_index",
+        "type": "search",
+        "definition": {
+            "analyzer": "lucene.english",
+            "mappings": {
+                "dynamic": false,
+                "fields": {
+                    "text": {
+                        "type": "string",
+                        "analyzer": "lucene.english",
+                        "multi": {
+                            "keyword": { "type": "string", "analyzer": "lucene.keyword" }
+                        }
+                    },
+                    "speaker.name": { "type": "string", "analyzer": "lucene.standard" },
+                    "ticker": { "type": "token" },
+                    "year": { "type": "number" },
+                    "quarter": { "type": "token" },
+                    "sector": { "type": "token" },
+                    "chunk_type": { "type": "token" },
+                    "speaker.role": { "type": "token" },
+                    "call_date": { "type": "date" }
+                }
+            }
+        }
+    };
+
+    // Construct the actual command payload
+    let command = doc! {
+        "createSearchIndexes": CHUNKS_COLLECTION,
+        "indexes": [vector_index, text_index]
+    };
+
+    // Execute the command against the database
+    db.handle().run_command(command).await?;
 
     Ok(())
 }

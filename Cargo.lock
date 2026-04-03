@@ -1333,6 +1333,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "migrate_tool"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "dotenvy",
+ "mongodb",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "vetta_core",
+]
+
+[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2705,18 +2718,6 @@ dependencies = [
  "tonic-prost-build",
  "tower",
  "tracing",
-]
-
-[[package]]
-name = "vetta_migrate"
-version = "0.1.0"
-dependencies = [
- "dotenvy",
- "mongodb",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "vetta_core",
 ]
 
 [[package]]

@@ -1,5 +1,5 @@
 [package]
-name = "vetta_migrate"
+name = "migrate_tool"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -17,3 +17,4 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 dotenvy.workspace = true
 mongodb.workspace = true
+clap.workspace = true

@@ -9,7 +9,8 @@ This module coordinates the transcription flow:
 """
 
 import logging
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, Future
+from typing import Optional
 
 import grpc
 from faster_whisper import WhisperModel
@@ -120,7 +121,9 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
         )
 
     @staticmethod
-    def _words_to_chunk(words: list, speaker_id: str, confidence: float) -> speech_pb2.TranscriptChunk:
+    def _words_to_chunk(
+        words: list, speaker_id: str, confidence: float
+    ) -> speech_pb2.TranscriptChunk:
         """
         Helper to create a protobuf transcript chunk from a sub-list of words.
         This allows us to split a single Whisper segment across multiple speakers.
@@ -186,22 +189,20 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
             return
 
-        # ── Phase 1: Diarization ──────────────────────
-        diarization = None
+        # ── Phase 1: Background Diarization ───────────
+        diarization_future: Optional[Future] = None
         if diarize and diar_input is not None:
-            try:
-                diarization = self.diarizer.run(
-                    diar_input,
-                    min_speakers=self._get_num_speakers(request.options),
-                    max_speakers=self._get_num_speakers(request.options),
-                )
-            except _INFERENCE_ERRORS:
-                logger.exception("Diarization failed")
-                context.abort(
-                    grpc.StatusCode.INTERNAL,
-                    "Diarization failed",
-                )
-                return
+            local_diarizer = self.diarizer
+            assert local_diarizer is not None, (
+                "Diarizer must be initialized before running."
+            )
+
+            diarization_future = self._executor.submit(
+                local_diarizer.run,
+                diar_input,
+                min_speakers=self._get_num_speakers(request.options),
+                max_speakers=self._get_num_speakers(request.options),
+            )
 
         # ── Phase 2: Whisper ──────────────────────────
         try:
@@ -228,17 +229,36 @@ class WhisperServicer(speech_pb2_grpc.SpeechToTextServicer):
             context.abort(grpc.StatusCode.INTERNAL, "Transcription failed")
             return
 
-        # ── Streaming ─────────────────────────────────
+        # ── Phase 3: Wait for Diarization ─────────────
+        diarization = None
+        if diarization_future is not None:
+            try:
+                assert diarization_future is not None
+                diarization = diarization_future.result()
+            except _INFERENCE_ERRORS:
+                logger.exception("Diarization failed")
+                context.abort(
+                    grpc.StatusCode.INTERNAL,
+                    "Diarization failed",
+                )
+                return
+
         try:
             for segment in segments:
                 # Fallback to segment-level if diarization is missing or no word timestamps
                 if diarization is None or not segment.words:
-                    speaker = diarization.speaker_at(segment.start, segment.end) if diarization else ""
+                    speaker = (
+                        diarization.speaker_at(segment.start, segment.end)
+                        if diarization
+                        else ""
+                    )
                     yield self._segment_to_chunk(segment, speaker_id=speaker)
                     continue
 
                 # Splitting segment by word-level speakers
-                segment_dominant_speaker = diarization.speaker_at(segment.start, segment.end)
+                segment_dominant_speaker = diarization.speaker_at(
+                    segment.start, segment.end
+                )
                 current_speaker = None
                 current_words = []
 
