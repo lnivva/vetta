@@ -100,6 +100,18 @@ stt-test-integration: stt-setup
 # Remove all stt build artifacts (proto + venv)
 stt-clean: stt-clean-proto stt-clean-venv
 
+# Check stt formatting (CI)
+stt-format-check: stt-venv
+    cd {{ stt_dir }} && uv run ruff format --check .
+
+# Lint stt Python code with ruff
+stt-lint: stt-venv
+    cd {{ stt_dir }} && uv run ruff check .
+
+# Type-check stt Python code with mypy
+stt-typecheck: stt-venv
+    cd {{ stt_dir }} && uv run mypy .
+
 # ── Docs (Rspress) ──────────────────────────────────────────────────
 
 docs_dir := "docs"
