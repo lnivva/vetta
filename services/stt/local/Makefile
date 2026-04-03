@@ -5,12 +5,16 @@ PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 VENV_DIR = .venv
 VENV_SENTINEL = $(VENV_DIR)/.sentinel
 
+# Dynamically construct the NVIDIA library paths within the venv
+NVIDIA_LIBS = $(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cublas/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cudnn/lib
+
 .PHONY: all run proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv clean-venv fresh-venv
 
 all: proto
 
-run:
-	@LD_LIBRARY_PATH=$(PWD)/.venv/lib/python3.12/site-packages/nvidia/cu13/lib:$(LD_LIBRARY_PATH) \
+run: $(VENV_SENTINEL)
+	@echo "Starting service with CUDA 12 isolation..."
+	@LD_LIBRARY_PATH=$(NVIDIA_LIBS):$(LD_LIBRARY_PATH) \
 	uv run python main.py --config config.toml
 
 # ── Normal setup (fast, incremental) ────────────────────────────────
@@ -66,10 +70,13 @@ format: $(VENV_SENTINEL)
 	uv run ruff format .
 
 test: $(VENV_SENTINEL)
+	@LD_LIBRARY_PATH=$(NVIDIA_LIBS):$(LD_LIBRARY_PATH) \
 	uv run pytest -v
 
 test-unit: $(VENV_SENTINEL)
+	@LD_LIBRARY_PATH=$(NVIDIA_LIBS):$(LD_LIBRARY_PATH) \
 	uv run pytest tests/test_settings.py -v
 
 test-integration: $(VENV_SENTINEL)
+	@LD_LIBRARY_PATH=$(NVIDIA_LIBS):$(LD_LIBRARY_PATH) \
 	uv run pytest tests/test_integration.py -v
