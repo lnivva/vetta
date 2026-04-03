@@ -5,7 +5,7 @@ PROTOS := $(shell find $(PROTO_DIR) -name '*.proto')
 VENV_DIR = .venv
 VENV_SENTINEL = $(VENV_DIR)/.sentinel
 
-NVIDIA_LIBS = $(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cublas/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cudnn/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_runtime/lib
+NVIDIA_LIBS = $(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cublas/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cudnn/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_nvrtc/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/cuda_runtime/lib:$(PWD)/$(VENV_DIR)/lib/python3.12/site-packages/nvidia/npp/lib
 
 .PHONY: all run proto setup test test-unit test-integration clean-proto rebuild-proto format proto-check venv clean-venv fresh-venv
 

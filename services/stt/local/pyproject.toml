@@ -12,11 +12,15 @@ dependencies = [
     "python-json-logger==4.0.0",
     "pyannote-audio==4.0.4",
     "ctranslate2==4.7.1",
-    "nvidia-cuda-runtime-cu12",
-    "nvidia-cublas-cu12",
-    "nvidia-cudnn-cu12",
-    "nvidia-curand-cu12",
-    "nvidia-cuda-nvrtc-cu12"
+    "nvidia-cuda-runtime-cu12; sys_platform == 'linux'",
+    "nvidia-cublas-cu12; sys_platform == 'linux'",
+    "nvidia-cudnn-cu12; sys_platform == 'linux'",
+    "nvidia-curand-cu12; sys_platform == 'linux'",
+    "nvidia-cuda-nvrtc-cu12; sys_platform == 'linux'",
+    "nvidia-npp-cu12; sys_platform == 'linux'",
+    "torch>=2.11.0",
+    "torchaudio>=2.11.0",
+    "torchcodec>=0.11.0",
 ]
 
 [dependency-groups]
@@ -33,16 +37,26 @@ dev = [
 
 [tool.uv]
 default-groups = ["dev"]
+environments = [
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchaudio = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
+torchcodec = [
+    { index = "pytorch-cu128", marker = "sys_platform == 'linux'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
 url = "https://download.pytorch.org/whl/cu128"
 explicit = true
-
-[tool.uv.sources]
-torch = { index = "pytorch-cu128" }
-torchaudio = { index = "pytorch-cu128" }
-torchcodec = { index = "pytorch-cu128" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
