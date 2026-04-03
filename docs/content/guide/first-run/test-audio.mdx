@@ -1,58 +1,62 @@
 import {Tab, Tabs} from "@rspress/core/theme";
 
-
 # Generate Test Audio
 
-You need an audio file to test the pipeline. Pick the option that matches your platform.
+<p>
+    You need an audio file to test the pipeline. Pick the option that matches your platform. We provide helper scripts
+    in the `_dev_script/` directory that generate realistic multi-speaker audio with acoustic fingerprinting for
+    reliable diarization testing.
+</p>
 
 <Tabs>
     <Tab label="macOS">
 
-        The `say` command generates speech from text. We create two speakers and combine them with ffmpeg:
+        The macOS script uses the built-in `say` command and `ffmpeg` to generate speech, apply acoustic profiles
+        (pitch, tempo, EQ), and combine the segments with silence padding.
+
+        **Prerequisites**: Ensure you have `ffmpeg` installed (e.g., `brew install ffmpeg`).
 
         ```bash
-        # Speaker 1 (Samantha)
-        say -v Samantha "Good morning everyone and welcome to the Q3 2024 earnings call. \
-        We are pleased to report record revenue of 4.2 billion dollars." -o /tmp/speaker1.aiff
-
-        # Speaker 2 (Daniel)
-        say -v Daniel "Thank you. Total revenue came in at 4.2 billion. Operating expenses \
-        were 2.1 billion, resulting in a healthy margin." -o /tmp/speaker2.aiff
-
-        # Speaker 1 again (Samantha)
-        say -v Samantha "Thank you for that overview. Let me now open the floor for questions." -o /tmp/speaker3.aiff
-
-        # Combine into a single 16kHz mono WAV
-        ffmpeg -y -i /tmp/speaker1.aiff -i /tmp/speaker2.aiff -i /tmp/speaker3.aiff \
-        -filter_complex "[0:a][1:a][2:a]concat=n=3:v=0:a=1[out]" -map "[out]" -ar 16000 -ac 1 /tmp/test.wav
+        # Run the generator script
+        ./_dev_script/gen_test_audio_macos.sh
         ```
+
+        This will output a perfectly formatted 16kHz, mono, PCM-16 file at `/tmp/test.wav` featuring three distinct
+        speakers (CEO, CFO, Analyst).
 
     </Tab>
     <Tab label="Linux">
 
-        Use `espeak` to generate speech, or skip straight to an existing audio file:
+        The Linux script uses the Piper TTS engine to generate high-quality speech. You must first run the setup script
+        to download the Piper binary and necessary ONNX voice models.
+
+        **Prerequisites**: Ensure you have `curl`, `tar`, and `ffmpeg` installed (e.g., `sudo apt-get install -y curl
+        tar ffmpeg`).
 
         ```bash
-        # Option A: Use any audio file you already have
-        cp /path/to/your/earnings-call.mp3 /tmp/test.mp3
+        # 1. Download and configure Piper + voices to ~/piper
+        ./_dev_script/setup_piper_linux.sh
+
+        # 2. Run the generator script
+        ./_dev_script/gen_test_audio_linux.sh
         ```
 
+        This will output a perfectly formatted 16kHz, mono, PCM-16 file at `/tmp/test.wav` featuring three distinct
+        speakers (CEO, CFO, Analyst).
+
+        *Alternative: Use an existing audio file*
+
         ```bash
-        # Option B: Generate with espeak + ffmpeg
-        sudo apt-get install -y espeak
-
-        espeak -w /tmp/speaker1.wav "Good morning everyone and welcome to the Q3 earnings call."
-        espeak -w /tmp/speaker2.wav "Thank you. Total revenue came in at 4.2 billion."
-
-        ffmpeg -y -i /tmp/speaker1.wav -i /tmp/speaker2.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1[out]" -map \
-        "[out]" -ar 16000 -ac 1 /tmp/test.wav
+        cp /path/to/your/earnings-call.mp3 /tmp/test.mp3
         ```
 
     </Tab>
 </Tabs>
 
 :::tip
+
 WAV is the preferred format because Whisper and PyAudio handle it natively without any conversion.
 
 Other formats (MP3, AIFF, etc.) are supported through ffmpeg but require an internal conversion step that adds processing time.
+
 :::
