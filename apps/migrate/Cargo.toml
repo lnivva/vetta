@@ -1,0 +1,19 @@
+[package]
+name = "vetta_migrate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+# Internal workspace dependencies
+vetta_core = { path = "../../crates/core" }
+
+# External dependencies
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+dotenvy.workspace = true
+mongodb.workspace = true
