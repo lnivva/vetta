@@ -339,7 +339,7 @@ class TranscriptPostProcessor:
         try:
             device = 0 if torch.cuda.is_available() else -1
             self._punctuator = pipeline(
-                task="text2text-generation",
+                task="token-classification",
                 model=self._config.punctuation_model,
                 device=device,
             )
