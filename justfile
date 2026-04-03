@@ -136,3 +136,35 @@ docs-preview: docs-build
 docs-clean:
     rm -rf {{ docs_dir }}/doc_build
     rm -rf {{ docs_dir }}/node_modules/.cache
+
+# ── Rust workspace ──────────────────────────────────────────────────
+
+rust_dir := "rust"
+
+# Check Rust formatting (CI)
+rust-format-check:
+    cd {{ rust_dir }} && cargo fmt --all -- --check
+
+# Format Rust code
+rust-format:
+    cd {{ rust_dir }} && cargo fmt --all
+
+# Lint Rust code with Clippy
+rust-lint:
+    cd {{ rust_dir }} && cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+# Build the Rust workspace
+rust-build:
+    cd {{ rust_dir }} && cargo build --workspace --verbose
+
+# Run all Rust tests
+rust-test:
+    cd {{ rust_dir }} && cargo test --workspace --verbose
+
+# Build in release mode
+rust-build-release:
+    cd {{ rust_dir }} && cargo build --workspace --release --verbose
+
+# Clean Rust build artifacts
+rust-clean:
+    cd {{ rust_dir }} && cargo clean

@@ -4,22 +4,22 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - "../../rust/apps/**"
-      - "../../rust/crates/**"
+      - "rust/apps/**"
+      - "rust/crates/**"
       - "proto/**"
-      - "../../rust/Cargo.toml"
-      - "../../rust/Cargo.lock"
-      - "../../rust/rust-toolchain.toml"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/rust-toolchain.toml"
       - ".github/workflows/ci-rust.yml"
   pull_request:
     branches: [ "main" ]
     paths:
-      - "../../rust/apps/**"
-      - "../../rust/crates/**"
+      - "rust/apps/**"
+      - "rust/crates/**"
       - "proto/**"
-      - "../../rust/Cargo.toml"
-      - "../../rust/Cargo.lock"
-      - "../../rust/rust-toolchain.toml"
+      - "rust/Cargo.toml"
+      - "rust/Cargo.lock"
+      - "rust/rust-toolchain.toml"
       - ".github/workflows/ci-rust.yml"
 
 env:
@@ -37,6 +37,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Install Protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
@@ -48,15 +51,17 @@ jobs:
 
       - name: Enable Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "rust -> target"
 
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: just rust-format-check
 
       - name: Lint with Clippy
-        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        run: just rust-lint
 
       - name: Build
-        run: cargo build --workspace --verbose
+        run: just rust-build
 
       - name: Run tests
-        run: cargo test --workspace --verbose
+        run: just rust-test
