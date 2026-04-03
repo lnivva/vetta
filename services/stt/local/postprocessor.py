@@ -360,34 +360,32 @@ class TranscriptPostProcessor:
         if not words:
             return text
 
-        if len(words) <= _PUNCTUATION_CHUNK_WORDS:
-            outputs = punctuator(
-                text,
-                max_length=len(words) * 2,
-                truncation=True,
-            )
-            return outputs[0]["generated_text"]
+        try:
+            results = punctuator(text)
 
-        out: list[str] = []
-        stride = _PUNCTUATION_CHUNK_WORDS - _PUNCTUATION_OVERLAP_WORDS
+            punc_map = {
+                "0": "",
+                ".": ".",
+                ",": ",",
+                "?": "?",
+                "-": "-",
+                ":": ":",
+            }
+            if isinstance(results, list):
+                output_text = ""
+                for entity in results:
+                    word = entity.get("word", "")
+                    word = word.replace(" ", " ")
+                    label = entity.get("entity") or entity.get("entity_group")
+                    output_text += word + punc_map.get(label, "")
 
-        for i in range(0, len(words), stride):
-            chunk = " ".join(words[i: i + _PUNCTUATION_CHUNK_WORDS])
-            result = punctuator(
-                chunk,
-                max_length=len(chunk.split()) * 2,
-                truncation=True,
-            )
-            punct = result[0]["generated_text"]
+                return output_text.strip()
 
-            if i == 0:
-                out.append(punct)
-            else:
-                tokens = punct.split()
-                remainder = tokens[_PUNCTUATION_OVERLAP_WORDS:]
-                out.append(" ".join(remainder))
+        except Exception as e:
+            logger.error(f"Punctuation restoration failed: {e}")
+            return text
 
-        return " ".join(out)
+        return text
 
     @staticmethod
     def clean_punctuation_spacing(text: str) -> str:
