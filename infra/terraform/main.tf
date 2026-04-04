@@ -121,6 +121,16 @@ resource "aws_security_group_rule" "dns_tcp" {
   description       = "Allow DNS (TCP) to VPC resolver"
 }
 
+resource "aws_security_group_rule" "mongodb_egress" {
+  type              = "egress"
+  from_port         = 27017
+  to_port           = 27017
+  protocol          = "tcp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow outbound traffic to MongoDB Atlas"
+}
+
 resource "aws_instance" "vetta_ec2" {
   ami                         = data.aws_ssm_parameter.ubuntu_2404_ami.value
   associate_public_ip_address = true
@@ -130,6 +140,7 @@ resource "aws_instance" "vetta_ec2" {
   user_data_base64            = filebase64("${path.module}/../ec2/init.sh")
   user_data_replace_on_change = true
   vpc_security_group_ids      = [aws_security_group.vetta_server_security_group.id]
+  disable_api_termination     = true
 
   root_block_device {
     volume_size           = 60

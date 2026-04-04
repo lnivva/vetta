@@ -1,44 +1,46 @@
-## Processing Pipeline
+# Processing Pipeline
 
-The STT service is a standalone gRPC server that owns everything between raw audio and transcribed segments. The core
-library sends audio in and receives timestamped, speaker-attributed text back. It has no knowledge of the models or
-runtimes involved.
+The STT service is a standalone **streaming gRPC server** that owns everything between raw audio and transcribed segments.
+
+The core library sends audio in and receives **streamed, timestamped transcript chunks** back. It has no knowledge of the models, diarization pipeline, or runtimes involved.
 
 ![STT Service Architecture](/vetta-processing-pipeline-arch.png)
 
-### Stages
+## Stages
 
-Every request follows five sequential stages:
+Every request follows the pipeline below. Some stages may run **in parallel** or be **skipped** depending on request and configuration.
 
-1. **Resolve**: Determine the audio source (local path, inline bytes, or remote URI). Remote URIs are validated against
-SSRF rules and streamed with size limits.
-2. **Preprocess**: Decode audio to 16 kHz mono float32 via ffmpeg. If diarization is requested, a separate seekable
-copy is prepared for pyannote.
-3. **Diarize**: Run speaker diarization to produce timestamped speaker labels. This stage is optional and controlled
-per-request.
-4. **Transcribe**: Stream audio through Whisper, yielding segments as they are recognized.
-5. **Stream**: Merge transcription segments with speaker labels and yield `TranscriptChunk` messages back over the gRPC
-stream.
+1. **Resolve**: Determine the audio source (local path, inline bytes, or remote URI). Remote URIs are validated against SSRF rules, fetched with size limits, and validated before decoding.
+2. **Preprocess**: Decode audio and prepare model-specific inputs. Audio is normalized for Whisper inference, and if diarization is requested, a separate seekable input is prepared for the diarization pipeline.
+3. **Diarize (optional)**: Run speaker diarization to produce timestamped speaker labels. This stage is optional, configuration-driven, and lazily initialized. When enabled, diarization may execute in parallel with transcription.
+4. **Transcribe**: Run Whisper inference to produce timestamped segments (and optionally word-level timestamps).
+5. **Route & Stream**: Execution branches dynamically based on the requested features:
+ - **Streaming Fast-Path**: If diarization and full-context post-processing are disabled, the pipeline yields `TranscriptChunk` messages back to the caller immediately as Whisper generates them.
+ - **Batch Path**: If diarization or advanced post-processing (like sentence stitching or deep punctuation) is requested, the segment generator is exhausted. Speaker attribution and text corrections are applied to the full transcript, and then the finalized chunks are streamed to the caller.
 
-### Transport
+## Transport
 
-The server supports two transport modes:
+The server supports multiple gRPC transport options depending on deployment:
 
-- **Unix Domain Socket**: default for same-host deployments, avoids TCP overhead
-- **TCP**: for cross-machine setups
+- **Unix Domain Socket**: default for same-host deployments to avoid TCP overhead
+- **TCP**: for cross-machine or containerized setups
 
-Transport is a configuration choice. The pipeline is identical either way.
+Transport is a configuration choice; the processing pipeline is identical regardless of transport.
 
-### Speaker Attribution
+## Speaker Attribution
 
-Diarization and transcription run as independent inference passes. Whisper produces timestamped text; pyannote produces
-timestamped speaker labels. The service merges them by temporal overlap. Each segment is assigned the speaker with the
-greatest time intersection.
+Diarization and transcription run as **independent inference passes**. Whisper produces timestamped text segments (and words when enabled); the diarization pipeline produces timestamped speaker turns.
 
-This means the two models can be upgraded, replaced, or scaled independently.
+Speaker labels are assigned by **maximum temporal overlap**:
+- Each segment is assigned the speaker with the greatest overlap
+- Word-level speaker labels are assigned using the same overlap logic
 
-### Configuration
+If diarization is unavailable or disabled, segments are emitted without speaker labels.
 
-All runtime behavior (model selection, device placement, compute type, concurrency, diarization toggle) is driven by a
-TOML config file with environment variable overrides. Hardware detection (CUDA availability, core count, VRAM) runs at
-startup to resolve `auto` values into concrete settings.
+This design allows the transcription model, diarization model, and post-processing logic to be upgraded or replaced independently.
+
+## Configuration
+
+All runtime behavior (model selection, device placement, compute type, concurrency, diarization enablement, and post-processing features) is driven by configuration with environment variable overrides.
+
+Diarization dependencies are loaded lazily, allowing the service to start even when diarization support is not installed. Optional components fail gracefully unless explicitly marked as required.

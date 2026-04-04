@@ -4,17 +4,15 @@ on:
   push:
     branches: [ "main" ]
     paths:
-      - "services/stt/local/**"
+      - "services/stt/**"
+      - "proto/**"
       - ".github/workflows/ci-python.yml"
   pull_request:
     branches: [ "main" ]
     paths:
-      - "services/stt/local/**"
+      - "services/stt/**"
+      - "proto/**"
       - ".github/workflows/ci-python.yml"
-
-defaults:
-  run:
-    working-directory: services/stt/local
 
 permissions:
   contents: read
@@ -37,25 +35,25 @@ jobs:
         uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
-          cache-dependency-glob: "services/stt/local/uv.lock"
+          cache-dependency-glob: "services/stt/uv.lock"
 
-      - name: Install dependencies
-        run: uv sync --frozen --all-extras
+      - name: Install just
+        uses: extractions/setup-just@v2
 
       - name: Install Protobuf compiler
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
 
-      - name: Check formatting
-        run: uv run ruff format --check .
+      - name: Setup (venv + protobuf)
+        run: just stt-setup
 
-      - name: Generate protobuf files
-        run: make proto
+      - name: Check formatting
+        run: just stt-format-check
 
       - name: Lint with Ruff
-        run: uv run ruff check .
+        run: just stt-lint
 
       - name: Type-check with mypy
-        run: uv run mypy .
+        run: just stt-typecheck
 
       - name: Run tests
-        run: uv run pytest tests/ -v
+        run: just stt-test
