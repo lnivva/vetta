@@ -1,12 +1,13 @@
 use clap::Parser;
 use dotenvy::dotenv;
+use miette::{IntoDiagnostic, Result, WrapErr};
 use mongodb::IndexModel;
 use mongodb::bson::{Document, doc};
 use mongodb::options::IndexOptions;
 use std::collections::HashSet;
-use std::process;
-use tracing::{Level, error, info, warn};
-use tracing_subscriber::FmtSubscriber;
+use std::io;
+use tracing::{Level, info, warn, debug};
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use vetta_core::db::models::{EarningsCallDocument, EarningsChunkDocument};
 use vetta_core::db::{Db, DbConfig};
@@ -24,99 +25,95 @@ struct Args {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     // 1. Parse CLI arguments
     let args = Args::parse();
 
-    // 2. Initialize logging
+    // 2. Initialize logging to stderr
     let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
+        .with_writer(io::stderr)
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(Level::INFO.into())
+                .from_env_lossy(),
+        )
         .finish();
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
-    info!("Starting vetta_migrate database initialization...");
+    tracing::subscriber::set_global_default(subscriber).into_diagnostic()?;
+
+    debug!("Starting vetta_migrate database initialization...");
 
     // 3. Load environment variables
-    match dotenv() {
-        Ok(path) => info!("Loaded environment variables from {}", path.display()),
-        Err(e) if e.not_found() => {
-            info!("No .env file found, relying on system environment variables");
-        }
-        Err(e) => {
-            error!("Failed to load .env file: {}", e);
-            process::exit(1);
+    if let Ok(env_path) = std::env::var("VETTA_ENV_PATH") {
+        dotenvy::from_filename(&env_path)
+            .into_diagnostic()
+            .wrap_err_with(|| format!("Failed to load inherited .env file at {}", env_path))?;
+        debug!("Loaded context from inherited VETTA_ENV_PATH: {}", env_path);
+    } else {
+        match dotenv() {
+            Ok(path) => debug!("Loaded environment variables from local {}", path.display()),
+            Err(e) if e.not_found() => {
+                debug!("No .env file found, relying on system environment variables")
+            }
+            Err(e) => return Err(e).into_diagnostic().wrap_err("Failed to load local .env file"),
         }
     }
 
     // 4. Strict Environment Variable Check
-    let config = match DbConfig::from_env() {
-        Ok(c) => {
-            let safe_uri = if c.uri.contains('@') {
-                "mongodb://***@***".to_string()
-            } else {
-                c.uri.clone()
-            };
-            info!(
-                "Environment OK. Target Database: '{}', URI: {}",
-                c.database, safe_uri
-            );
-            c
-        }
-        Err(e) => {
-            error!("Missing required environment variables: {}", e);
-            error!("Please ensure MONGODB_URI and MONGODB_DATABASE are set.");
-            process::exit(1);
-        }
+    let config = DbConfig::from_env()
+        .into_diagnostic()
+        .wrap_err("Missing required environment variables. Please ensure MONGODB_URI and MONGODB_DATABASE are set.")?;
+
+    let safe_uri = if config.uri.contains('@') {
+        "mongodb://***@***".to_string()
+    } else {
+        config.uri.clone()
     };
+    debug!(
+        "Environment OK. Target Database: '{}', URI: {}",
+        config.database, safe_uri
+    );
 
     // 5. Connect to MongoDB
-    info!("Initializing MongoDB client...");
-    let db = match Db::connect(&config).await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("Failed to initialize MongoDB client: {}", e);
-            process::exit(1);
-        }
-    };
+    debug!("Initializing MongoDB client...");
+    let db = Db::connect(&config)
+        .await
+        .into_diagnostic()
+        .wrap_err("Failed to initialize MongoDB client")?;
 
     // 6. Explicitly Ping the Database
-    info!("Pinging database to verify connection...");
-    match db.handle().run_command(doc! { "ping": 1 }).await {
-        Ok(_) => info!("Database connection verified successfully."),
-        Err(e) => {
-            error!("Database ping failed. Is the server running and accessible?");
-            error!("Details: {}", e);
-            process::exit(1);
-        }
-    }
+    debug!("Pinging database to verify connection...");
+    db.handle()
+        .run_command(doc! { "ping": 1 })
+        .await
+        .into_diagnostic()
+        .wrap_err("Database ping failed. Is the server running and accessible?")?;
+    debug!("Database connection verified successfully.");
 
     // 7. Run the B-Tree index migrations
-    info!("Ensuring standard B-Tree indexes exist on collections...");
-    if let Err(e) = apply_standard_indexes(&db).await {
-        error!("Failed to create standard indexes: {}", e);
-        process::exit(1);
-    }
-    info!("Standard indexes successfully verified/created.");
+    debug!("Ensuring standard B-Tree indexes exist on collections...");
+    apply_standard_indexes(&db)
+        .await
+        .wrap_err("Failed to create standard indexes")?;
+    debug!("Standard indexes successfully verified/created.");
 
     // 8. Conditionally run Atlas Search index migrations
     if args.with_search {
-        info!("Ensuring Atlas Search and Vector Search indexes...");
-        if let Err(e) = apply_search_indexes(&db).await {
-            error!("Failed to ensure Atlas Search indexes.");
-            error!("Are you running against a standard MongoDB container instead of Atlas?");
-            error!("Details: {}", e);
-            process::exit(1);
-        }
-        info!("Atlas Search indexes successfully ensured.");
+        debug!("Ensuring Atlas Search and Vector Search indexes...");
+        apply_search_indexes(&db)
+            .await
+            .wrap_err("Failed to ensure Atlas Search indexes. Are you running against a standard MongoDB container instead of Atlas?")?;
+        debug!("Atlas Search indexes successfully ensured.");
     } else {
-        info!("Skipping Atlas Search indexes. Use --with-search to apply them.");
+        debug!("Skipping Atlas Search indexes. Use --with-search to apply them.");
     }
 
-    info!("Database migration completed successfully.");
+    debug!("Database migration completed successfully.");
+    Ok(())
 }
 
 /// Applies all required standard MongoDB B-Tree indexes to the database.
-async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
+async fn apply_standard_indexes(db: &Db) -> Result<()> {
     let calls = db.collection::<EarningsCallDocument>(CALLS_COLLECTION);
     let chunks = db.collection::<EarningsChunkDocument>(CHUNKS_COLLECTION);
 
@@ -128,11 +125,13 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .options(IndexOptions::builder().unique(true).build())
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     calls
         .create_index(IndexModel::builder().keys(doc! { "call_date": -1 }).build())
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     calls
         .create_index(
@@ -140,7 +139,8 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .keys(doc! { "company.sector": 1, "call_date": -1 })
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     calls
         .create_index(
@@ -148,7 +148,8 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .keys(doc! { "status": 1, "updated_at": -1 })
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     // --- earnings_chunks indexes ---
     chunks
@@ -157,7 +158,8 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .keys(doc! { "call_id": 1, "chunk_index": 1 })
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     chunks
         .create_index(
@@ -165,7 +167,8 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .keys(doc! { "ticker": 1, "call_date": -1 })
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     chunks
         .create_index(
@@ -173,26 +176,24 @@ async fn apply_standard_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
                 .keys(doc! { "model_version": 1 })
                 .build(),
         )
-        .await?;
+        .await
+        .into_diagnostic()?;
 
     Ok(())
 }
 
 /// Retrieves the names of all existing search indexes on a collection using
 /// the `$listSearchIndexes` aggregation stage.
-async fn list_existing_search_indexes(
-    db: &Db,
-    collection: &str,
-) -> Result<HashSet<String>, mongodb::error::Error> {
+async fn list_existing_search_indexes(db: &Db, collection: &str) -> Result<HashSet<String>> {
     use futures::TryStreamExt;
 
     let coll = db.collection::<Document>(collection);
 
     let pipeline = vec![doc! { "$listSearchIndexes": {} }];
-    let mut cursor = coll.aggregate(pipeline).await?;
+    let mut cursor = coll.aggregate(pipeline).await.into_diagnostic()?;
 
     let mut names = HashSet::new();
-    while let Some(index_doc) = cursor.try_next().await? {
+    while let Some(index_doc) = cursor.try_next().await.into_diagnostic()? {
         if let Ok(name) = index_doc.get_str("name") {
             names.insert(name.to_string());
         }
@@ -202,16 +203,12 @@ async fn list_existing_search_indexes(
 }
 
 /// Creates a single search index on a collection.
-async fn create_search_index(
-    db: &Db,
-    collection: &str,
-    index: Document,
-) -> Result<(), mongodb::error::Error> {
+async fn create_search_index(db: &Db, collection: &str, index: Document) -> Result<()> {
     let command = doc! {
         "createSearchIndexes": collection,
         "indexes": [index]
     };
-    db.handle().run_command(command).await?;
+    db.handle().run_command(command).await.into_diagnostic()?;
     Ok(())
 }
 
@@ -222,13 +219,13 @@ async fn update_search_index(
     collection: &str,
     name: &str,
     definition: Document,
-) -> Result<(), mongodb::error::Error> {
+) -> Result<()> {
     let command = doc! {
         "updateSearchIndex": collection,
         "name": name,
         "definition": definition
     };
-    db.handle().run_command(command).await?;
+    db.handle().run_command(command).await.into_diagnostic()?;
     Ok(())
 }
 
@@ -239,7 +236,7 @@ async fn ensure_search_index(
     collection: &str,
     existing: &HashSet<String>,
     index: Document,
-) -> Result<(), mongodb::error::Error> {
+) -> Result<()> {
     let name = index
         .get_str("name")
         .expect("search index document must have a 'name' field")
@@ -276,7 +273,7 @@ async fn ensure_search_index(
 /// 2. For each desired index:
 ///    - If an index with the same name already exists → `updateSearchIndex`
 ///    - Otherwise → `createSearchIndexes`
-async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
+async fn apply_search_indexes(db: &Db) -> Result<()> {
     let existing = match list_existing_search_indexes(db, CHUNKS_COLLECTION).await {
         Ok(names) => {
             if names.is_empty() {
@@ -295,9 +292,6 @@ async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
             names
         }
         Err(e) => {
-            // $listSearchIndexes may fail on non-Atlas deployments.  Warn and
-            // fall back to attempting creation (which will fail with a clear
-            // error if the index already exists).
             warn!(
                 "Could not list existing search indexes ({}). \
                  Falling back to create-only mode.",
@@ -328,12 +322,6 @@ async fn apply_search_indexes(db: &Db) -> Result<(), mongodb::error::Error> {
     ensure_search_index(db, CHUNKS_COLLECTION, &existing, vector_index).await?;
 
     // ── 2. Full-Text Search Index ────────────────────────────────────────
-    //
-    // Atlas Search static mappings require nested fields to be declared under
-    // a parent field with type "document".  Dot-notation keys like
-    // "speaker.name" at the top level of the fields object are not supported
-    // and will cause index creation to fail.  Instead, we declare "speaker"
-    // as a document containing its own "fields" map.
     let text_index = doc! {
         "name": "chunk_text_index",
         "type": "search",

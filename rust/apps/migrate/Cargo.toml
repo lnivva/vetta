@@ -23,3 +23,4 @@ dotenvy.workspace = true
 mongodb.workspace = true
 clap.workspace = true
 futures.workspace = true
+miette.workspace = true
