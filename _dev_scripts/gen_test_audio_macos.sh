@@ -8,8 +8,8 @@
 #  Output : /tmp/test.wav  (16 kHz, mono, PCM-16)
 #  Speakers:
 #    - CEO      (Samantha)
-#    - CFO      (Alex)
-#    - Analyst  (Victoria)
+#    - CFO      (Fred)
+#    - Analyst  (Melina)
 #
 #  Requires:
 #    - macOS built-in 'say' command
@@ -25,8 +25,8 @@ source "$SCRIPT_DIR/audio_common.sh"
 # ── Platform-specific configuration ───────────────────────────────────────
 # Standard macOS voices. You can check available voices with: say -v '?'
 VOICE_CEO="Samantha"
-VOICE_CFO="Alex"
-VOICE_ANALYST="Victoria"
+VOICE_CFO="Fred"
+VOICE_ANALYST="Melina"
 
 # ── Generate one segment (macOS 'say') ─────────────────────────────────────
 # $1 text
