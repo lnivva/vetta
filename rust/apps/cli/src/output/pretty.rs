@@ -4,12 +4,12 @@ use std::io::{self, Write};
 use vetta_core::domain::Transcript;
 
 pub fn print_transcript(transcript: &Transcript) -> Result<()> {
-    let mut stdout = io::stdout();
+    let mut stdout = io::stdout().lock();
     let term_width = terminal_width().saturating_sub(6);
     let text_indent = "   │ ";
     let text_width = term_width.saturating_sub(text_indent.len()).max(40);
 
-    let separator = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━";
+    let separator = "━".repeat(term_width);
 
     writeln!(stdout).into_diagnostic()?;
     writeln!(stdout, "   {}", separator.dimmed()).into_diagnostic()?;
