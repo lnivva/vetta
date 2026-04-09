@@ -6,7 +6,7 @@ use mongodb::bson::{Document, doc};
 use mongodb::options::IndexOptions;
 use std::collections::HashSet;
 use std::io;
-use tracing::{Level, info, warn, debug};
+use tracing::{Level, debug, info, warn};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 use vetta_core::db::models::{EarningsCallDocument, EarningsChunkDocument};
@@ -55,7 +55,11 @@ async fn main() -> Result<()> {
             Err(e) if e.not_found() => {
                 debug!("No .env file found, relying on system environment variables")
             }
-            Err(e) => return Err(e).into_diagnostic().wrap_err("Failed to load local .env file"),
+            Err(e) => {
+                return Err(e)
+                    .into_diagnostic()
+                    .wrap_err("Failed to load local .env file");
+            }
         }
     }
 
