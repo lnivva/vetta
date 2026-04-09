@@ -63,6 +63,7 @@ fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
     Ok(env_path)
 }
 
+#[cfg(debug_assertions)]
 fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
     if !ctx.quiet {
         debug!("Ensuring database indexes are up to date...");
@@ -100,5 +101,10 @@ fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
         debug!("Database migration check passed.");
     }
 
+    Ok(())
+}
+
+#[cfg(not(debug_assertions))]
+fn ensure_migrated(_ctx: &AppContext, _env_path: Option<&Path>) -> Result<()> {
     Ok(())
 }
