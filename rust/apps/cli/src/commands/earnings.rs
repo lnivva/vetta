@@ -10,7 +10,7 @@ use crate::{
 
 use vetta_core::db::{Db, DbConfig};
 use vetta_core::domain::Quarter as CoreQuarter;
-use vetta_core::earnings::{EarningsProcessor, ProcessRequest};
+use vetta_core::earnings::{EarningsProcessor, ProcessEarningsCallRequest};
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum CliQuarter {
@@ -69,7 +69,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
     let processor = EarningsProcessor::new(stt, db);
     let observer = EarningsCliObserver::new();
 
-    let request = ProcessRequest {
+    let request = ProcessEarningsCallRequest {
         file_path: file.to_string_lossy().into(),
         ticker,
         year,

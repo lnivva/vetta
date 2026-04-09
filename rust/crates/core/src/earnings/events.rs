@@ -297,7 +297,8 @@ pub trait EarningsObserver: Send + Sync {
         _chunk_count: u32,
         _speaker_count: u32,
         _duration_secs: f64,
-    ) {}
+    ) {
+    }
     fn on_pipeline_failed(&self, _stage: PipelineStage, _error_message: &str) {}
 }
 

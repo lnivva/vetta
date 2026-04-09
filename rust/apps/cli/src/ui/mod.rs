@@ -99,11 +99,11 @@ pub fn timestamp(seconds: f32) -> String {
 }
 
 pub fn success_msg(msg: &str) -> String {
-    format!("{} {msg}", style(OK).green())
+    format!("{} {msg}", Styles::success().apply_to(OK))
 }
 
 pub fn error_msg(msg: &str) -> String {
-    format!("{} {msg}", style(FAIL).red())
+    format!("{} {msg}", Styles::error().apply_to(FAIL))
 }
 
 // ── Spinner factory ──────────────────────────────────────────────────

@@ -13,6 +13,7 @@ pub mod earnings {
 
     // Public surface
     pub use errors::{EarningsError, IngestError};
+    pub use events::PipelineStage;
     pub use events::{EarningsEvent, EarningsObserver, NullObserver};
-    pub use processor::{EarningsProcessor, ProcessRequest};
+    pub use processor::{EarningsProcessor, ProcessEarningsCallRequest};
 }

@@ -2,8 +2,49 @@ use mongodb::bson::DateTime;
 use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 
-/// Top-level earnings call document — source of truth.
-/// Collection: `earnings_calls`
+// ── ID helper error ──────────────────────────────────────────
+
+/// Returned when a document's `_id` is accessed before it has been persisted.
+#[derive(Debug, Clone)]
+pub struct MissingIdError {
+    pub document_type: &'static str,
+}
+
+impl std::fmt::Display for MissingIdError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} document has no _id (not yet persisted?)",
+            self.document_type
+        )
+    }
+}
+
+impl std::error::Error for MissingIdError {}
+
+/// Shared behavior for any Mongo document that carries an optional `_id`.
+pub trait MongoDocument {
+    /// The human-readable type name used in error messages.
+    const DOC_TYPE: &'static str;
+
+    /// Returns the raw optional `_id`.
+    fn id_opt(&self) -> Option<ObjectId>;
+
+    /// Returns the `_id` or an error if the document hasn't been persisted.
+    fn id(&self) -> Result<ObjectId, MissingIdError> {
+        self.id_opt().ok_or(MissingIdError {
+            document_type: Self::DOC_TYPE,
+        })
+    }
+
+    /// Returns the `_id` as a hex string, or an error.
+    fn id_hex(&self) -> Result<String, MissingIdError> {
+        self.id().map(|oid| oid.to_hex())
+    }
+}
+
+// ── EarningsCallDocument ─────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EarningsCallDocument {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
@@ -39,6 +80,75 @@ pub struct EarningsCallDocument {
     pub model_versions: ModelVersions,
     pub updated_at: DateTime,
 }
+
+impl MongoDocument for EarningsCallDocument {
+    const DOC_TYPE: &'static str = "EarningsCallDocument";
+
+    fn id_opt(&self) -> Option<ObjectId> {
+        self.id
+    }
+}
+
+// ── EarningsChunkDocument ────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EarningsChunkDocument {
+    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
+    pub id: Option<ObjectId>,
+
+    // --- Parent reference ---
+    pub call_id: ObjectId,
+
+    // --- Denormalized filters ---
+    pub ticker: String,
+    pub year: u16,
+    pub quarter: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_date: Option<DateTime>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sector: Option<String>,
+
+    // --- Chunk identity ---
+    pub chunk_index: u32,
+    pub chunk_type: ChunkType,
+
+    // --- Speaker ---
+    pub speaker: ChunkSpeaker,
+
+    // --- Temporal position ---
+    pub start_time: f32,
+    pub end_time: f32,
+
+    // --- Content ---
+    pub text: String,
+
+    // --- Context window for reranker ---
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<ChunkContext>,
+
+    // --- Embedding ---
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
+
+    // --- Search metadata ---
+    pub word_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_count: Option<u32>,
+
+    // --- Lineage ---
+    pub model_version: String,
+    pub created_at: DateTime,
+}
+
+impl MongoDocument for EarningsChunkDocument {
+    const DOC_TYPE: &'static str = "EarningsChunkDocument";
+
+    fn id_opt(&self) -> Option<ObjectId> {
+        self.id
+    }
+}
+
+// ── Everything else unchanged ────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyInfo {
@@ -125,57 +235,6 @@ pub struct ModelVersions {
     pub embedding: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding_dimensions: Option<u32>,
-}
-
-/// Search-optimized chunk document — one per dialogue turn.
-/// Collection: `earnings_chunks`
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EarningsChunkDocument {
-    #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
-    pub id: Option<ObjectId>,
-
-    // --- Parent reference ---
-    pub call_id: ObjectId,
-
-    // --- Denormalized filters ---
-    pub ticker: String,
-    pub year: u16,
-    pub quarter: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub call_date: Option<DateTime>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sector: Option<String>,
-
-    // --- Chunk identity ---
-    pub chunk_index: u32,
-    pub chunk_type: ChunkType,
-
-    // --- Speaker ---
-    pub speaker: ChunkSpeaker,
-
-    // --- Temporal position ---
-    pub start_time: f32,
-    pub end_time: f32,
-
-    // --- Content ---
-    pub text: String,
-
-    // --- Context window for reranker ---
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub context: Option<ChunkContext>,
-
-    // --- Embedding ---
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub embedding: Option<Vec<f32>>,
-
-    // --- Search metadata ---
-    pub word_count: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub token_count: Option<u32>,
-
-    // --- Lineage ---
-    pub model_version: String,
-    pub created_at: DateTime,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
