@@ -4,7 +4,7 @@ use crate::db::models::{
 };
 use crate::db::{Db, DbError};
 use serde::Deserialize;
-use tracing::{error, info, instrument, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
@@ -120,7 +120,7 @@ impl EarningsRepository {
         {
             Ok(call_id) => {
                 session.commit_transaction().await?;
-                info!(call_id = %call_id, "Successfully replaced earnings call");
+                debug!(call_id = %call_id, "Successfully replaced earnings call");
                 Ok(call_id)
             }
             Err(e) => {
@@ -152,7 +152,7 @@ impl EarningsRepository {
             .await?
         {
             let call_id = existing.id.expect("existing must have id");
-            warn!(call_id = %call_id, "Found existing call for business key, replacing...");
+            debug!(call_id = %call_id, "Found existing call for business key, replacing...");
 
             self.chunks
                 .delete_many(doc! { "call_id": call_id })
