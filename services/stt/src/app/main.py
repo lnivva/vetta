@@ -1,24 +1,25 @@
 """
-Entry point for the Whisper Speech-to-Text gRPC service.
+Entry point for the AI gRPC Application.
 
-This script configures structured logging, initializes the gRPC server
-over a Unix domain socket, and handles the service lifecycle.
+This script configures structured logging, initializes the gRPC server,
+registers the STT and Embedding services, and handles the service lifecycle.
 """
 
 import argparse
 import logging
 import os
 import signal
-
 from concurrent import futures
 from pathlib import Path
 
 import grpc
 from pythonjsonlogger.json import JsonFormatter
 
-from servicer import WhisperServicer
-from settings import load_settings
-from speech import speech_pb2_grpc
+from src.generated.speech import speech_pb2_grpc
+from src.generated.embed import embed_pb2_grpc
+from src.app.embed_servicer import EmbeddingServicer
+from src.app.stt_servicer import SpeechToTextServicer
+from src.core.settings import load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,11 +27,6 @@ logger = logging.getLogger(__name__)
 def setup_logging():
     """
     Configure the root logger to emit structured JSON logs.
-
-    Sets the root logger level to INFO and, if the root logger has no handlers,
-    adds a StreamHandler formatted with a JsonFormatter containing the fields:
-    asctime, levelname, name, and message. This prevents adding duplicate handlers
-    when called multiple times.
     """
     root_logger = logging.getLogger()
     root_logger.setLevel(logging.INFO)
@@ -38,8 +34,6 @@ def setup_logging():
     # Prevent adding multiple handlers if called multiple times
     if not root_logger.handlers:
         log_handler = logging.StreamHandler()
-
-        # Define the fields you want in every log entry using the updated class
         formatter = JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
         log_handler.setFormatter(formatter)
         root_logger.addHandler(log_handler)
@@ -57,12 +51,20 @@ def serve(config_path: str):
     if socket_path and os.path.exists(socket_path):
         os.unlink(socket_path)
 
+    # Initialize the core gRPC server
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=settings.concurrency.max_workers)
     )
+
+    # ── Register Services ──────────────────────────────────────
     speech_pb2_grpc.add_SpeechToTextServicer_to_server(
-        WhisperServicer(settings), server
+        SpeechToTextServicer(settings), server
     )
+
+    embed_pb2_grpc.add_EmbeddingServiceServicer_to_server(
+        EmbeddingServicer(settings), server
+    )
+    # ───────────────────────────────────────────────────────────
 
     if settings.service.is_unix_socket:
         assert socket_path is not None  # Guaranteed by is_unix_socket
@@ -89,10 +91,10 @@ def serve(config_path: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the Whisper gRPC STT service.")
+    parser = argparse.ArgumentParser(description="Run the AI gRPC services.")
     parser.add_argument(
         "--config",
-        default=str(Path(__file__).parent / "config.toml"),
+        default=str(Path(__file__).parent.parent.parent / "config.toml"),
         help="Path to config.toml",
     )
     args = parser.parse_args()

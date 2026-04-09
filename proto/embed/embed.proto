@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package embeddings;
+
+import "google/protobuf/struct.proto";
+
+service EmbeddingService {
+  // Generates embeddings for a list of text strings.
+  rpc CreateEmbeddings(EmbeddingRequest) returns (EmbeddingResponse);
+}
+
+message EmbeddingRequest {
+  // Identifier for the specific model (e.g., "voyage-3-lite")
+  string model = 1;
+
+  // The text strings to embed.
+  repeated string inputs = 2;
+
+  // Type of input to optimize retrieval (e.g., "query" or "document")
+  optional string input_type = 3;
+
+  // Truncation behavior if text exceeds the model's token limit
+  bool truncate = 4;
+
+  // Optional: specific output dimension (if the model supports it)
+  optional int32 output_dimension = 5;
+
+  // Reserved for provider-specific tweaks (e.g., encoding formats)
+  google.protobuf.Struct extra_params = 6;
+}
+
+message EmbeddingResponse {
+  string model = 1;
+
+  // List of generated embeddings in the same order as inputs
+  repeated Embedding data = 2;
+
+  // Token usage information for billing and rate-limiting
+  Usage usage = 3;
+}
+
+message Embedding {
+  // The vector representation
+  repeated float vector = 1;
+
+  // Matches the index of the input string in the request
+  uint32 index = 2;
+}
+
+message Usage {
+  int32 prompt_tokens = 1;
+  int32 total_tokens = 2;
+}

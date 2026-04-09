@@ -1,5 +1,5 @@
 [project]
-name = "whisper-stt-service"
+name = "ai-grpc-service"
 version = "0.1.0"
 requires-python = ">=3.12"
 
@@ -21,6 +21,7 @@ dependencies = [
     "torch>=2.11.0",
     "torchaudio>=2.11.0",
     "torchcodec>=0.11.0",
+    "voyageai>=0.3.7",
 ]
 
 [dependency-groups]
@@ -60,9 +61,10 @@ explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."] # Ensures pytest resolves src.* imports correctly from the root
 
 [tool.mypy]
-files = ["."]
+files = ["src", "tests", "scripts"] # Point explicitly to the new folders
 explicit_package_bases = true
 
 [[tool.mypy.overrides]]
@@ -70,9 +72,10 @@ module = [
     "faster_whisper.*",
     "ctranslate2.*",
     "pyannote.*",
+    "voyageai.*", # Ignored missing imports for voyageai
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = ["speech.*"]
+module = ["src.generated.*"] # Pointed to the new isolated generated folder
 ignore_errors = true

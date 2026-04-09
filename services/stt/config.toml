@@ -31,3 +31,6 @@ model = "pyannote/speaker-diarization-3.1"
 device = "cpu"
 min_speakers = 0
 max_speakers = 0
+
+[embeddings]
+api_key = ""
