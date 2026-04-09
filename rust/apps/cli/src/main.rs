@@ -2,27 +2,35 @@ mod cli;
 mod commands;
 mod context;
 mod infra;
-mod output;
-mod reporter;
+mod ui;
 
 use clap::Parser;
 use context::AppContext;
-use miette::{Result, set_panic_hook};
+use miette::{IntoDiagnostic, Result, WrapErr, bail};
+use std::io;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use tracing::{error, info};
+use tracing::debug;
+use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    match dotenvy::dotenv() {
-        Ok(path) => info!("Loaded environment variables from {}", path.display()),
-        Err(e) if e.not_found() => {}
-        Err(e) => {
-            error!("Failed to load .env file: {}", e);
-            std::process::exit(1);
-        }
-    }
+    let subscriber = FmtSubscriber::builder()
+        .with_writer(io::stderr)
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(tracing::Level::INFO.into())
+                .from_env_lossy(),
+        )
+        .finish();
+    tracing::subscriber::set_global_default(subscriber).into_diagnostic()?;
 
-    set_panic_hook();
+    let env_path = match load_env_vars() {
+        Ok(value) => value,
+        Err(value) => return value,
+    };
+
+    miette::set_panic_hook();
 
     let cli = cli::Cli::parse();
 
@@ -31,50 +39,66 @@ async fn main() -> Result<()> {
         quiet: cli.quiet,
     };
 
-    ensure_migrated(&ctx)?;
+    ensure_migrated(&ctx, env_path.as_deref())?;
 
     commands::dispatch(cli.command, &ctx).await
 }
 
-/// Run the migration tool to ensure all required indexes exist.
-fn ensure_migrated(ctx: &AppContext) -> Result<()> {
-    if !ctx.quiet {
-        info!("Ensuring database indexes are up to date...");
-    }
-
-    let status = Command::new("vetta_migrate")
-        .stdout(if ctx.quiet {
-            std::process::Stdio::null()
-        } else {
-            std::process::Stdio::inherit()
-        })
-        .stderr(std::process::Stdio::inherit())
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            if !ctx.quiet {
-                info!("Database migration check passed.");
-            }
-            Ok(())
+fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
+    let env_path = match dotenvy::dotenv() {
+        Ok(path) => {
+            debug!("Loaded environment variables from {}", path.display());
+            Some(path)
         }
-        Ok(s) => {
-            error!(
-                exit_code = s.code().unwrap_or(-1),
-                "Database migration failed"
-            );
-            std::process::exit(1);
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            error!(
-                "vetta_migrate binary not found. \
-                 Build it with: cargo build --bin vetta_migrate"
-            );
-            std::process::exit(1);
+        Err(e) if e.not_found() => {
+            debug!("Environment variables not found from {}", display(e));
+            None
         }
         Err(e) => {
-            error!(error = %e, "Failed to run vetta_migrate");
-            std::process::exit(1);
+            return Err(Err(e)
+                .into_diagnostic()
+                .wrap_err("Failed to load .env file"));
         }
+    };
+    Ok(env_path)
+}
+
+fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
+    if !ctx.quiet {
+        debug!("Ensuring database indexes are up to date...");
     }
+
+    let mut migrate_bin = std::env::current_exe()
+        .into_diagnostic()
+        .wrap_err("Failed to resolve current executable path")?;
+    migrate_bin.pop();
+    migrate_bin.push("vetta_migrate");
+
+    let mut cmd = Command::new(&migrate_bin);
+
+    if let Some(path) = env_path {
+        cmd.env("VETTA_ENV_PATH", path);
+    }
+
+    if ctx.quiet {
+        cmd.env("RUST_LOG", "error");
+    }
+
+    let status = cmd
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .into_diagnostic()
+        .wrap_err("Failed to execute vetta_migrate binary. Did you build it with: `cargo build --bin vetta_migrate`?")?;
+
+    if !status.success() {
+        let code = status.code().unwrap_or(-1);
+        bail!("Database migration failed with exit code: {}", code);
+    }
+
+    if !ctx.quiet {
+        debug!("Database migration check passed.");
+    }
+
+    Ok(())
 }
