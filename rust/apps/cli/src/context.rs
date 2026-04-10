@@ -1,7 +1,10 @@
 use std::path::PathBuf;
+use crate::cli::CliOutputOptions;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AppContext {
     pub socket: PathBuf,
-    pub quiet: bool,
+    pub verbose: bool,
+    pub debug: bool,
+    pub output: CliOutputOptions,
 }

@@ -1,7 +1,4 @@
-use crate::db::models::{
-    CallStatus, ChunkContext, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument,
-    ModelVersions, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats,
-};
+use crate::db::models::{CallStatus, ChunkContext, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument, ModelVersions, MongoDocument, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats};
 use crate::db::{Db, DbError};
 use serde::Deserialize;
 use tracing::{debug, error, info, instrument, warn};
@@ -150,8 +147,9 @@ impl EarningsRepository {
             })
             .session(&mut *session)
             .await?
+
         {
-            let call_id = existing.id.expect("existing must have id");
+            let call_id = existing.id().map_err(|e| DbError::Serialization(e.to_string()))?;
             debug!(call_id = %call_id, "Found existing call for business key, replacing...");
 
             self.chunks

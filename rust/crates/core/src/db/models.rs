@@ -1,3 +1,5 @@
+use std::error::Error;
+use std::fmt::Display;
 use mongodb::bson::DateTime;
 use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
@@ -10,7 +12,7 @@ pub struct MissingIdError {
     pub document_type: &'static str,
 }
 
-impl std::fmt::Display for MissingIdError {
+impl Display for MissingIdError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -20,7 +22,7 @@ impl std::fmt::Display for MissingIdError {
     }
 }
 
-impl std::error::Error for MissingIdError {}
+impl Error for MissingIdError {}
 
 /// Shared behavior for any Mongo document that carries an optional `_id`.
 pub trait MongoDocument {

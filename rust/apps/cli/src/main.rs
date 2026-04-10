@@ -15,11 +15,19 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let cli = cli::Cli::parse();
+
+    let log_level = if cli.debug {
+        "debug"
+    } else {
+        "error"
+    };
+
     let subscriber = FmtSubscriber::builder()
         .with_writer(io::stderr)
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(tracing::Level::INFO.into())
+                .with_default_directive(log_level.parse().expect("Invalid log level"))
                 .from_env_lossy(),
         )
         .finish();
@@ -32,11 +40,11 @@ async fn main() -> Result<()> {
 
     miette::set_panic_hook();
 
-    let cli = cli::Cli::parse();
-
     let ctx = AppContext {
         socket: cli.socket,
-        quiet: cli.quiet,
+        verbose: cli.verbose,
+        debug: cli.debug,
+        output: cli.output,
     };
 
     ensure_migrated(&ctx, env_path.as_deref())?;
@@ -51,7 +59,7 @@ fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
             Some(path)
         }
         Err(e) if e.not_found() => {
-            debug!("Environment variables not found from {}", display(e));
+            debug!("Environment variables not found: {}", e);
             None
         }
         Err(e) => {
@@ -65,7 +73,7 @@ fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
 
 #[cfg(debug_assertions)]
 fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
-    if !ctx.quiet {
+    if ctx.debug {
         debug!("Ensuring database indexes are up to date...");
     }
 
@@ -81,7 +89,7 @@ fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
         cmd.env("VETTA_ENV_PATH", path);
     }
 
-    if ctx.quiet {
+    if !ctx.debug {
         cmd.env("RUST_LOG", "error");
     }
 
@@ -97,7 +105,7 @@ fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
         bail!("Database migration failed with exit code: {}", code);
     }
 
-    if !ctx.quiet {
+    if ctx.debug {
         debug!("Database migration check passed.");
     }
 

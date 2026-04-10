@@ -1,25 +1,24 @@
+#![allow(dead_code)]
+
 pub mod earnings;
 
 use console::{Emoji, Style, style};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
 
-// ── Icons with ASCII fallback ────────────────────────────────────────
-
-pub static OK: Emoji<'_, '_> = Emoji("✔", "ok");
-pub static FAIL: Emoji<'_, '_> = Emoji("✖", "!!");
-pub static WARN: Emoji<'_, '_> = Emoji("⚠", "!!");
-pub static DOT: Emoji<'_, '_> = Emoji("●", "*");
+pub static SUCCESS: Emoji<'_, '_> = Emoji("✓", "√");
+pub static ERROR: Emoji<'_, '_> = Emoji("✗", "x");
+pub static WARN: Emoji<'_, '_> = Emoji("⚠", "!");
+pub static INFO: Emoji<'_, '_> = Emoji("ℹ", "i");
+pub static STEP: Emoji<'_, '_> = Emoji("›", ">");
+pub static DOT: Emoji<'_, '_> = Emoji("·", "-");
 pub static PIPE: Emoji<'_, '_> = Emoji("│", "|");
 pub static ARROW: Emoji<'_, '_> = Emoji("→", "->");
-pub static TRANSCRIPT: Emoji<'_, '_> = Emoji("📄", "##");
 
-pub const INDENT: &str = "   ";
+pub const INDENT: &str = "  ";
 
 const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const SPINNER_TEMPLATE: &str = "{spinner:.cyan} {msg}";
-
-// ── Semantic styles ──────────────────────────────────────────────────
 
 const SPEAKER_COLORS: &[console::Color] = &[
     console::Color::Yellow,
@@ -28,13 +27,15 @@ const SPEAKER_COLORS: &[console::Color] = &[
     console::Color::Cyan,
     console::Color::Blue,
     console::Color::Red,
-    console::Color::Color256(208),
-    console::Color::Color256(177),
 ];
 
 pub struct Styles;
 
 impl Styles {
+    pub fn primary() -> Style {
+        Style::new().cyan().bold()
+    }
+
     pub fn heading() -> Style {
         Style::new().bold().bright()
     }
@@ -55,14 +56,16 @@ impl Styles {
         Style::new().red().bold()
     }
 
+    pub fn warning() -> Style {
+        Style::new().yellow()
+    }
+
     pub fn speaker(index: usize) -> Style {
         Style::new()
             .fg(SPEAKER_COLORS[index % SPEAKER_COLORS.len()])
             .bold()
     }
 }
-
-// ── Layout ───────────────────────────────────────────────────────────
 
 pub fn term_width() -> usize {
     console::Term::stdout().size().1 as usize
@@ -73,20 +76,46 @@ pub fn content_width() -> usize {
 }
 
 pub fn text_width() -> usize {
-    content_width().saturating_sub(6).max(40)
+    content_width().saturating_sub(4).max(60)
 }
 
 pub fn separator() -> String {
-    style("━".repeat(content_width())).dim().to_string()
+    style("─".repeat(content_width())).dim().to_string()
 }
 
 pub fn text_prefix() -> String {
-    style(format!("{INDENT}{PIPE}  ")).dim().to_string()
+    style(format!("{INDENT}{PIPE} ")).dim().to_string()
 }
 
-// ── Formatters ───────────────────────────────────────────────────────
+pub fn success_msg(msg: &str) -> String {
+    format!("{INDENT}{} {}", Styles::success().apply_to(SUCCESS), msg)
+}
 
-pub fn timestamp(seconds: f32) -> String {
+pub fn error_msg(msg: &str) -> String {
+    format!("{INDENT}{} {}", Styles::error().apply_to(ERROR), Styles::error().apply_to(msg))
+}
+
+pub fn warn_msg(msg: &str) -> String {
+    format!("{INDENT}{} {}", Styles::warning().apply_to(WARN), Styles::warning().apply_to(msg))
+}
+
+pub fn info_msg(msg: &str) -> String {
+    format!("{INDENT}{} {}", Styles::primary().apply_to(INFO), msg)
+}
+
+pub fn step_msg(msg: &str) -> String {
+    format!("{INDENT}{} {}", Styles::dimmed().apply_to(STEP), msg)
+}
+
+pub fn kv_msg(key: &str, value: &str) -> String {
+    format!(
+        "{INDENT}{} {}",
+        Styles::dimmed().apply_to(format!("{key}:")),
+        value
+    )
+}
+
+pub fn timestamp(seconds: f64) -> String {
     let total = seconds.round() as u64;
     let h = total / 3600;
     let m = (total % 3600) / 60;
@@ -98,16 +127,6 @@ pub fn timestamp(seconds: f32) -> String {
     }
 }
 
-pub fn success_msg(msg: &str) -> String {
-    format!("{} {msg}", Styles::success().apply_to(OK))
-}
-
-pub fn error_msg(msg: &str) -> String {
-    format!("{} {msg}", Styles::error().apply_to(FAIL))
-}
-
-// ── Spinner factory ──────────────────────────────────────────────────
-
 pub fn spinner() -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -115,6 +134,7 @@ pub fn spinner() -> ProgressBar {
             .unwrap()
             .tick_chars(SPINNER_CHARS),
     );
+    pb.set_prefix(INDENT.to_string());
     pb.enable_steady_tick(Duration::from_millis(80));
     pb
 }

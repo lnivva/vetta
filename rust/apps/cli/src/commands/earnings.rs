@@ -6,6 +6,7 @@ use crate::{
     context::AppContext,
     infra::factory,
     ui::earnings::{EarningsCliObserver, print_transcript},
+    cli::CliOutputOptions,
 };
 
 use vetta_core::db::{Db, DbConfig};
@@ -67,7 +68,8 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
     let stt = factory::build_stt(ctx).await?;
 
     let processor = EarningsProcessor::new(stt, db);
-    let observer = EarningsCliObserver::new();
+
+    let observer = EarningsCliObserver::new(ctx.output, ctx.verbose);
 
     let request = ProcessEarningsCallRequest {
         file_path: file.to_string_lossy().into(),
@@ -84,7 +86,15 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         .await
         .into_diagnostic()?;
 
-    print_transcript(&transcript).expect("Unable to print transcript");
+    match ctx.output {
+        CliOutputOptions::JSON => {
+            let json_out = serde_json::to_string_pretty(&transcript).into_diagnostic()?;
+            println!("{json_out}");
+        }
+        CliOutputOptions::Plain => {
+            print_transcript(&transcript).expect("Unable to print transcript");
+        }
+    }
 
     Ok(())
 }
