@@ -13,9 +13,9 @@ hf_token = ""
 [inference]
 beam_size = 5
 vad_filter = true
-vad_min_silence_ms = 300
-no_speech_threshold = 0.6
-log_prob_threshold = -0.5
+vad_min_silence_ms = 1000
+no_speech_threshold = 0.4
+log_prob_threshold = -0.3
 compression_ratio_threshold = 2.0
 word_timestamps = true
 initial_prompt = ""
