@@ -41,6 +41,16 @@ pub struct TranscriptSegment {
     pub end_time: f32,
     pub text: String,
     pub speaker_id: String,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub words: Vec<WordTiming>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WordTiming {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub text: String,
+    pub confidence: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

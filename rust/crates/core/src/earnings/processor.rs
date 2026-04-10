@@ -3,9 +3,9 @@ use std::time::Instant;
 
 use tokio_stream::StreamExt;
 
-use crate::db::models::MongoDocument;
-use crate::db::{Db, EarningsRepository, SegmentInput, StoreEarningsRequest};
-use crate::domain::{Quarter, Transcript, TranscriptSegment};
+use crate::db::models::{MongoDocument, OptimizedChunk};
+use crate::db::{ChunkInput, Db, EarningsRepository, SegmentInput, StoreEarningsRequest};
+use crate::stt::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, TranscribeOptions};
 
 use super::errors::EarningsError;
@@ -109,15 +109,15 @@ impl EarningsProcessor {
             });
         })?;
 
-        // ── 5. Chunk Optimization (TODO) ─────────────────────
-        let chunk_count = transcript.segments.len() as u32;
-        self.optimize_chunks(chunk_count, observer);
+        // ── 5. Chunk Optimization ────────────────────────────
+        let optimized_chunks = self.optimize_chunks(&transcript, observer);
+        let chunk_count = optimized_chunks.len() as u32;
 
         // ── 6. Persist Earnings Call & Chunks ────────────────
         observer.on_event(&EarningsEvent::StoringCall { chunk_count });
 
         let call_id = self
-            .store(&request, &transcript, &format_info, &repo)
+            .store(&request, &transcript, &optimized_chunks, &format_info, &repo)
             .await
             .inspect_err(|e| {
                 observer.on_event(&EarningsEvent::PipelineFailed {
@@ -150,7 +150,21 @@ impl EarningsProcessor {
             duration_secs,
         });
 
-        Ok(transcript)
+        let grouped_segments = transcript
+            .as_dialogue()
+            .into_iter()
+            .map(|turn| TranscriptSegment {
+                start_time: turn.start_time,
+                end_time: turn.end_time,
+                text: turn.text,
+                speaker_id: turn.speaker,
+                words: Vec::new(),
+            })
+            .collect();
+
+        Ok(Transcript {
+            segments: grouped_segments,
+        })
     }
 
     // ── Private helpers ──────────────────────────────────────
@@ -202,17 +216,28 @@ impl EarningsProcessor {
         let mut stream = self.stt.transcribe(&request.file_path, options).await?;
         let mut segments: Vec<TranscriptSegment> = Vec::new();
 
-        // STT streaming — report progress for each decoded chunk
         while let Some(result) = stream.next().await {
             let chunk = result?;
             let text = chunk.text.trim().to_string();
 
             if !text.is_empty() {
+                let domain_words = chunk
+                    .words
+                    .into_iter()
+                    .map(|w| crate::stt::domain::WordTiming {
+                        start_time: w.start_time,
+                        end_time: w.end_time,
+                        text: w.text,
+                        confidence: w.confidence,
+                    })
+                    .collect();
+
                 segments.push(TranscriptSegment {
                     start_time: chunk.start_time,
                     end_time: chunk.end_time,
                     text,
                     speaker_id: chunk.speaker_id,
+                    words: domain_words,
                 });
             }
 
@@ -242,19 +267,109 @@ impl EarningsProcessor {
         Ok(transcript)
     }
 
-    /// TODO: Semantic chunk optimization (merge short segments, split overly long ones, etc.). For now we emit the events with a pass-through.
-    fn optimize_chunks(&self, raw_chunk_count: u32, observer: &dyn EarningsObserver) {
+    fn optimize_chunks(
+        &self,
+        transcript: &Transcript,
+        observer: &dyn EarningsObserver,
+    ) -> Vec<OptimizedChunk> {
+        let raw_chunk_count = transcript.segments.len() as u32;
         observer.on_event(&EarningsEvent::ChunkOptimizationStarted { raw_chunk_count });
 
-        // Placeholder: no actual optimization yet — output == input
+        const TARGET_WORD_COUNT: usize = 300;
+
+        let mut preliminary_chunks: Vec<OptimizedChunk> = Vec::new();
+        let mut current_chunk: Option<OptimizedChunk> = None;
+
+        for seg in &transcript.segments {
+            let seg_word_count = seg.words.len();
+
+            if seg_word_count == 0 {
+                continue;
+            }
+
+            if let Some(mut c) = current_chunk.take() {
+                if c.speaker_id == seg.speaker_id && (c.word_count as usize + seg_word_count) <= TARGET_WORD_COUNT {
+                    c.text.push_str(&seg.text);
+                    c.end_time = seg.end_time;
+                    c.word_count += seg_word_count as u32;
+                    current_chunk = Some(c);
+                    continue;
+                } else {
+                    preliminary_chunks.push(c);
+                }
+            }
+
+            if seg_word_count > TARGET_WORD_COUNT {
+                for chunk_words in seg.words.chunks(TARGET_WORD_COUNT) {
+                    let text = chunk_words
+                        .iter()
+                        .map(|w| w.text.as_str())
+                        .collect::<String>()
+                        .trim()
+                        .to_string();
+
+                    let wc = chunk_words.len() as u32;
+
+                    let chunk_start = chunk_words.first().unwrap().start_time;
+                    let chunk_end = chunk_words.last().unwrap().end_time;
+
+                    preliminary_chunks.push(OptimizedChunk {
+                        speaker_id: seg.speaker_id.clone(),
+                        start_time: chunk_start,
+                        end_time: chunk_end,
+                        text,
+                        word_count: wc,
+                        previous_text: None,
+                        previous_speaker: None,
+                        next_text: None,
+                        next_speaker: None,
+                    });
+                }
+            } else {
+                current_chunk = Some(OptimizedChunk {
+                    speaker_id: seg.speaker_id.clone(),
+                    start_time: seg.start_time,
+                    end_time: seg.end_time,
+                    text: seg.text.clone(),
+                    word_count: seg_word_count as u32,
+                    previous_text: None,
+                    previous_speaker: None,
+                    next_text: None,
+                    next_speaker: None,
+                });
+            }
+        }
+
+        if let Some(c) = current_chunk {
+            preliminary_chunks.push(c);
+        }
+
+        let final_count = preliminary_chunks.len();
+        for i in 0..final_count {
+            let prev_text = if i > 0 { Some(preliminary_chunks[i - 1].text.clone()) } else { None };
+            let prev_speaker = if i > 0 { Some(preliminary_chunks[i - 1].speaker_id.clone()) } else { None };
+
+            let next_text = if i < final_count.saturating_sub(1) { Some(preliminary_chunks[i + 1].text.clone()) } else { None };
+            let next_speaker = if i < final_count.saturating_sub(1) { Some(preliminary_chunks[i + 1].speaker_id.clone()) } else { None };
+
+            preliminary_chunks[i].previous_text = prev_text;
+            preliminary_chunks[i].previous_speaker = prev_speaker;
+            preliminary_chunks[i].next_text = next_text;
+            preliminary_chunks[i].next_speaker = next_speaker;
+        }
+
+        let final_chunk_count = final_count as u32;
+
         observer.on_event(&EarningsEvent::ChunkOptimizationProgress {
-            chunks_processed: raw_chunk_count,
-            total_chunks: raw_chunk_count,
+            chunks_processed: final_chunk_count,
+            total_chunks: final_chunk_count,
         });
 
         observer.on_event(&EarningsEvent::ChunkOptimizationComplete {
-            final_chunk_count: raw_chunk_count,
+            final_chunk_count,
         });
+
+        preliminary_chunks
     }
 
     /// TODO: Generate vector embeddings for each chunk.
@@ -282,6 +397,7 @@ impl EarningsProcessor {
         &self,
         request: &ProcessEarningsCallRequest,
         transcript: &Transcript,
+        optimized_chunks: &[OptimizedChunk],
         format_info: &str,
         repo: &EarningsRepository,
     ) -> Result<mongodb::bson::oid::ObjectId, EarningsError> {
@@ -301,14 +417,32 @@ impl EarningsProcessor {
             format: file_format,
             duration_seconds: transcript.duration(),
             stt_model: "whisper-large-v3".into(),
+
             segments: transcript
-                .segments
+                .as_dialogue()
+                .into_iter()
+                .map(|turn| SegmentInput {
+                    start_time: turn.start_time,
+                    end_time: turn.end_time,
+                    text: turn.text,
+                    speaker_id: turn.speaker,
+                })
+                .collect(),
+
+            chunks: optimized_chunks
                 .iter()
-                .map(|s| SegmentInput {
-                    start_time: s.start_time,
-                    end_time: s.end_time,
-                    text: s.text.clone(),
-                    speaker_id: s.speaker_id.clone(),
+                .enumerate()
+                .map(|(index, c)| ChunkInput {
+                    chunk_index: index as u32,
+                    speaker_id: c.speaker_id.clone(),
+                    start_time: c.start_time,
+                    end_time: c.end_time,
+                    text: c.text.clone(),
+                    word_count: c.word_count,
+                    previous_text: c.previous_text.clone(),
+                    previous_speaker: c.previous_speaker.clone(),
+                    next_text: c.next_text.clone(),
+                    next_speaker: c.next_speaker.clone(),
                 })
                 .collect(),
         };

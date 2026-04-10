@@ -10,7 +10,7 @@ use crate::{
 };
 
 use vetta_core::db::{Db, DbConfig};
-use vetta_core::domain::Quarter as CoreQuarter;
+use vetta_core::stt::domain::Quarter as CoreQuarter;
 use vetta_core::earnings::{EarningsProcessor, ProcessEarningsCallRequest};
 
 #[derive(Debug, Clone, ValueEnum)]

@@ -1,10 +1,10 @@
-use crate::db::models::{CallStatus, ChunkContext, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument, ModelVersions, MongoDocument, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats};
+use crate::db::models::{CallStatus, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument, ModelVersions, MongoDocument, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats};
 use crate::db::{Db, DbError};
 use serde::Deserialize;
 use tracing::{debug, error, info, instrument, warn};
 
 use futures::{StreamExt, TryStreamExt};
-use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
+use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
 use mongodb::{Client, Collection};
 
 const CALLS_COLLECTION: &str = "earnings_calls";
@@ -29,40 +29,39 @@ pub struct EarningsRepository {
 
 /// Request to store a new earnings call and its derived chunks.
 pub struct StoreEarningsRequest {
-    /// Stock ticker symbol.
     pub ticker: String,
-    /// Fiscal year of the call.
     pub year: u16,
-    /// Fiscal quarter, such as `Q1` or `Q4`.
     pub quarter: String,
-    /// Original uploaded file name.
     pub file_name: String,
-    /// Optional content hash for deduplication.
     pub file_hash: Option<String>,
-    /// Optional media format or container type.
     pub format: Option<String>,
-    /// Audio duration in seconds.
     pub duration_seconds: f32,
-    /// Speech-to-text model identifier used for transcription.
     pub stt_model: String,
-    /// Raw transcript segments to persist and chunk.
     pub segments: Vec<SegmentInput>,
+    pub chunks: Vec<ChunkInput>,
 }
 
-/// Input segment used to build transcript turns and chunk documents.
-pub struct SegmentInput {
-    /// Segment start time in seconds.
+pub struct ChunkInput {
+    pub chunk_index: u32,
+    pub speaker_id: String,
     pub start_time: f32,
-    /// Segment end time in seconds.
     pub end_time: f32,
-    /// Recognized transcript text.
     pub text: String,
-    /// ASR-assigned speaker identifier.
+    pub word_count: u32,
+    pub previous_text: Option<String>,
+    pub previous_speaker: Option<String>,
+    pub next_text: Option<String>,
+    pub next_speaker: Option<String>,
+}
+
+pub struct SegmentInput {
+    pub start_time: f32,
+    pub end_time: f32,
+    pub text: String,
     pub speaker_id: String,
 }
 
 impl EarningsRepository {
-    /// Create a new repository instance backed by the given database handle.
     pub fn new(db: &Db) -> Self {
         Self {
             client: db.client().clone(),
@@ -71,12 +70,11 @@ impl EarningsRepository {
         }
     }
 
-    /// Store a new call and all derived dialogue chunks in a single transaction.
     #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year
     ))]
     pub async fn store(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
-        let (call_doc, turns) = build_call_and_turns(req, now);
+        let call_doc = build_call_document(&req, now);
 
         let mut session = self.client.start_session().await?;
         session.start_transaction().await?;
@@ -84,7 +82,7 @@ impl EarningsRepository {
         let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
         match self
-            .store_in_transaction(&mut session, &ctx, call_doc, &turns)
+            .store_in_transaction(&mut session, &ctx, call_doc, &req.chunks)
             .await
         {
             Ok(call_id) => {
@@ -100,19 +98,17 @@ impl EarningsRepository {
         }
     }
 
-    /// Replace an existing call identified by its business key, deleting any
-    /// old chunks before inserting the new transcript and chunk set.
     #[instrument(skip(self, req), fields(ticker = %req.ticker, quarter = %req.quarter, year = %req.year
     ))]
     pub async fn replace(&self, req: StoreEarningsRequest) -> Result<ObjectId, DbError> {
         let now = DateTime::now();
-        let (call_doc, turns) = build_call_and_turns(req, now);
+        let call_doc = build_call_document(&req, now);
 
         let mut session = self.client.start_session().await?;
         session.start_transaction().await?;
 
         match self
-            .replace_in_transaction(&mut session, call_doc, &turns, now)
+            .replace_in_transaction(&mut session, call_doc, &req.chunks, now)
             .await
         {
             Ok(call_id) => {
@@ -128,14 +124,11 @@ impl EarningsRepository {
         }
     }
 
-    /// Execute the full replace logic — lookup, delete old data, insert new —
-    /// inside an existing session/transaction so that any `?` failure is
-    /// caught by the caller's abort path.
     async fn replace_in_transaction(
         &self,
         session: &mut mongodb::ClientSession,
         call_doc: EarningsCallDocument,
-        turns: &[DialogueTurn],
+        chunks: &[ChunkInput],
         now: DateTime,
     ) -> Result<ObjectId, DbError> {
         if let Some(existing) = self
@@ -147,7 +140,6 @@ impl EarningsRepository {
             })
             .session(&mut *session)
             .await?
-
         {
             let call_id = existing.id().map_err(|e| DbError::Serialization(e.to_string()))?;
             debug!(call_id = %call_id, "Found existing call for business key, replacing...");
@@ -165,7 +157,7 @@ impl EarningsRepository {
 
         let ctx = StoreTransactionContext::from_doc(&call_doc, now);
 
-        self.store_in_transaction(session, &ctx, call_doc, turns)
+        self.store_in_transaction(session, &ctx, call_doc, chunks)
             .await
     }
 
@@ -174,7 +166,7 @@ impl EarningsRepository {
         session: &mut mongodb::ClientSession,
         ctx: &StoreTransactionContext,
         call_doc: EarningsCallDocument,
-        turns: &[DialogueTurn],
+        chunks: &[ChunkInput],
     ) -> Result<ObjectId, DbError> {
         debug_assert!(
             matches!(call_doc.status, CallStatus::Chunked),
@@ -192,10 +184,9 @@ impl EarningsRepository {
             .as_object_id()
             .ok_or_else(|| DbError::Serialization("Expected ObjectId".into()))?;
 
-        let chunk_docs: Vec<EarningsChunkDocument> = turns
+        let chunk_docs: Vec<EarningsChunkDocument> = chunks
             .iter()
-            .enumerate()
-            .map(|(i, t)| EarningsChunkDocument {
+            .map(|c| EarningsChunkDocument {
                 id: None,
                 call_id,
                 ticker: ctx.ticker.clone(),
@@ -203,20 +194,19 @@ impl EarningsRepository {
                 quarter: ctx.quarter.clone(),
                 call_date: None,
                 sector: None,
-                chunk_index: i as u32,
+                chunk_index: c.chunk_index,
                 chunk_type: ChunkType::Unknown,
                 speaker: ChunkSpeaker {
-                    speaker_id: t.speaker_id.clone(),
+                    speaker_id: c.speaker_id.clone(),
                     name: None,
                     role: None,
                     title: None,
                 },
-                start_time: t.start_time,
-                end_time: t.end_time,
-                text: t.text.clone(),
-                context: Some(build_context(turns, i)),
+                start_time: c.start_time,
+                end_time: c.end_time,
+                text: c.text.clone(),
                 embedding: None,
-                word_count: t.text.split_whitespace().count() as u32,
+                word_count: c.word_count,
                 token_count: None,
                 model_version: ctx.stt_model.clone(),
                 created_at: ctx.now,
@@ -233,7 +223,6 @@ impl EarningsRepository {
         Ok(call_id)
     }
 
-    /// Find a call by its business key.
     pub async fn find_call(
         &self,
         ticker: &str,
@@ -252,7 +241,6 @@ impl EarningsRepository {
         Ok(doc)
     }
 
-    /// Retrieve all chunks for a call, ordered by chunk position.
     #[instrument(skip(self))]
     pub async fn get_chunks(
         &self,
@@ -268,9 +256,6 @@ impl EarningsRepository {
         Ok(chunks)
     }
 
-    /// Update chunk embeddings and record the embedding model version used.
-    /// Utilizes concurrent `update_one` requests to maximize network I/O
-    /// in the absence of a stable `bulk_write` API in the Rust driver.
     #[instrument(skip(self, updates))]
     pub async fn update_embeddings(
         &self,
@@ -282,9 +267,7 @@ impl EarningsRepository {
         }
 
         let mut modified = 0u64;
-
         let concurrency_limit = 50;
-
         let chunks_collection = self.chunks.clone();
 
         let mut stream = futures::stream::iter(updates.into_iter())
@@ -319,13 +302,11 @@ impl EarningsRepository {
 
         info!(
             modified_chunks = modified,
-            model_version, "Successfully applied vector embeddings"
+            model_version, "Successfully applied vector embeddings via concurrent updates"
         );
         Ok(modified)
     }
 
-    /// Find all chunk IDs that need to be embedded or re-embedded for the
-    /// given model version.
     #[instrument(skip(self))]
     pub async fn find_chunks_needing_embedding(
         &self,
@@ -347,11 +328,6 @@ impl EarningsRepository {
         Ok(docs.into_iter().map(|d| d.id).collect())
     }
 
-    /// Delete a call and all of its associated chunks atomically.
-    ///
-    /// Both deletes run inside a multi-document transaction so the operation
-    /// either fully commits or fully aborts — no risk of orphaned chunks or
-    /// a call document left without its chunk set.
     #[instrument(skip(self))]
     pub async fn delete_call(&self, call_id: ObjectId) -> Result<(), DbError> {
         info!(call_id = %call_id, "Deleting call and associated chunks");
@@ -377,11 +353,6 @@ impl EarningsRepository {
         }
     }
 
-    /// Execute the two-collection delete inside an existing session/transaction.
-    ///
-    /// Chunks are removed first so that a transient failure never leaves
-    /// orphaned chunks behind (the call document still references them until
-    /// it is itself deleted).
     async fn delete_in_transaction(
         &self,
         session: &mut mongodb::ClientSession,
@@ -436,44 +407,29 @@ impl StoreTransactionContext {
     }
 }
 
-struct DialogueTurn {
-    speaker_id: String,
-    start_time: f32,
-    end_time: f32,
-    text: String,
-}
-
-fn build_call_and_turns(
-    req: StoreEarningsRequest,
-    now: DateTime,
-) -> (EarningsCallDocument, Vec<DialogueTurn>) {
-    let turns = build_dialogue_turns(&req.segments);
+fn build_call_document(req: &StoreEarningsRequest, now: DateTime) -> EarningsCallDocument {
     let speakers = unique_speaker_ids(&req.segments);
 
-    let call_doc = EarningsCallDocument {
+    EarningsCallDocument {
         id: None,
-        ticker: req.ticker,
+        ticker: req.ticker.clone(),
         year: req.year,
-        quarter: req.quarter,
+        quarter: req.quarter.clone(),
         company: None,
         call_date: None,
         source: SourceMetadata {
-            file_name: req.file_name,
-            file_hash: req.file_hash,
-            format: req.format,
+            file_name: req.file_name.clone(),
+            file_hash: req.file_hash.clone(),
+            format: req.format.clone(),
             duration_seconds: req.duration_seconds,
             ingested_at: now,
         },
         stats: TranscriptStats {
             segment_count: req.segments.len() as u32,
-            turn_count: turns.len() as u32,
+            turn_count: req.chunks.len() as u32,
             speaker_count: speakers.len() as u32,
-            word_count: req
-                .segments
-                .iter()
-                .map(|s| s.text.split_whitespace().count() as u32)
-                .sum(),
-            chunk_count: turns.len() as u32,
+            word_count: req.chunks.iter().map(|c| c.word_count).sum(),
+            chunk_count: req.chunks.len() as u32,
         },
         speakers: speakers
             .into_iter()
@@ -485,88 +441,30 @@ fn build_call_and_turns(
                 firm: None,
             })
             .collect(),
+
         transcript: TranscriptData {
             segments: req
                 .segments
-                .into_iter()
+                .iter()
                 .map(|s| SegmentData {
                     start_time: s.start_time,
                     end_time: s.end_time,
-                    text: s.text,
-                    speaker_id: s.speaker_id,
+                    text: s.text.clone(),
+                    speaker_id: s.speaker_id.clone(),
                 })
                 .collect(),
         },
+
         status: CallStatus::Chunked,
         model_versions: ModelVersions {
-            stt: req.stt_model,
+            stt: req.stt_model.clone(),
             embedding: None,
             embedding_dimensions: None,
         },
         updated_at: now,
-    };
-
-    (call_doc, turns)
-}
-
-/// Merge consecutive segments from the same speaker into dialogue turns.
-fn build_dialogue_turns(segments: &[SegmentInput]) -> Vec<DialogueTurn> {
-    let mut turns: Vec<DialogueTurn> = Vec::new();
-
-    for seg in segments {
-        let text = seg.text.trim();
-        if text.is_empty() {
-            continue;
-        }
-
-        let can_merge = match turns.last() {
-            Some(last) => !last.speaker_id.is_empty() && last.speaker_id == seg.speaker_id,
-            None => false,
-        };
-
-        if can_merge {
-            let last = turns.last_mut().expect("checked above");
-            last.text.push(' ');
-            last.text.push_str(text);
-            last.end_time = seg.end_time;
-        } else {
-            turns.push(DialogueTurn {
-                speaker_id: seg.speaker_id.clone(),
-                start_time: seg.start_time,
-                end_time: seg.end_time,
-                text: text.to_string(),
-            });
-        }
-    }
-
-    turns
-}
-
-/// Build context window (previous/next turn) for a chunk.
-fn build_context(turns: &[DialogueTurn], index: usize) -> ChunkContext {
-    let prev = if index > 0 {
-        let t = &turns[index - 1];
-        (Some(truncate(&t.text, 300)), Some(t.speaker_id.clone()))
-    } else {
-        (None, None)
-    };
-
-    let next = if index + 1 < turns.len() {
-        let t = &turns[index + 1];
-        (Some(truncate(&t.text, 300)), Some(t.speaker_id.clone()))
-    } else {
-        (None, None)
-    };
-
-    ChunkContext {
-        previous_text: prev.0,
-        previous_speaker: prev.1,
-        next_text: next.0,
-        next_speaker: next.1,
     }
 }
 
-/// Extract sorted, deduplicated speaker IDs.
 fn unique_speaker_ids(segments: &[SegmentInput]) -> Vec<String> {
     let mut speakers: Vec<String> = segments
         .iter()
@@ -581,17 +479,4 @@ fn unique_speaker_ids(segments: &[SegmentInput]) -> Vec<String> {
     speakers.sort();
     speakers.dedup();
     speakers
-}
-
-/// Truncate text to a max character length at a word boundary.
-fn truncate(text: &str, max_chars: usize) -> String {
-    let end = match text.char_indices().nth(max_chars) {
-        Some((idx, _)) => idx,
-        None => return text.to_string(),
-    };
-
-    match text[..end].rfind(' ') {
-        Some(pos) => format!("{}…", &text[..pos]),
-        None => format!("{}…", &text[..end]),
-    }
 }

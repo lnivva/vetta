@@ -1,6 +1,6 @@
 use miette::{IntoDiagnostic, Result};
 use std::io::{self, Write};
-use vetta_core::domain::Transcript;
+use vetta_core::stt::domain::Transcript;
 
 use crate::ui::{DOT, INDENT, Styles, kv_msg, separator, text_prefix, text_width, timestamp};
 

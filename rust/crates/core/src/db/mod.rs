@@ -8,4 +8,4 @@ pub use config::DbConfig;
 pub use connection::Db;
 pub use error::DbError;
 
-pub use repositories::{EarningsRepository, SegmentInput, StoreEarningsRequest};
+pub use repositories::{EarningsRepository, SegmentInput, StoreEarningsRequest, ChunkInput};

@@ -1,5 +1,4 @@
 pub mod db;
-pub mod domain;
 pub mod stt;
 
 pub mod earnings {

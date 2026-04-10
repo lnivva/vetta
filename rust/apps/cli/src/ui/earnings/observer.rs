@@ -1,5 +1,5 @@
 use indicatif::ProgressBar;
-use vetta_core::domain::Transcript;
+use vetta_core::stt::domain::Transcript;
 use vetta_core::earnings::{EarningsObserver, PipelineStage};
 use crate::cli::CliOutputOptions;
 use crate::ui::{self, ARROW, Styles, error_msg, success_msg, warn_msg};

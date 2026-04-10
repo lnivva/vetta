@@ -1,5 +1,6 @@
 mod error;
-pub mod local;
+mod local;
+pub mod domain;
 
 pub use error::SttError;
 pub use local::LocalSttStrategy;
@@ -35,7 +36,7 @@ pub struct TranscribeOptions {
     pub num_speakers: Option<u32>,
 }
 
-pub type TranscriptStream = Pin<Box<dyn Stream<Item = Result<TranscriptChunk, SttError>> + Send>>;
+pub type TranscriptStream = Pin<Box<dyn Stream<Item=Result<TranscriptChunk, SttError>> + Send>>;
 
 #[async_trait]
 pub trait Stt: Send + Sync {

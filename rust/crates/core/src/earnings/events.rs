@@ -1,4 +1,4 @@
-use crate::domain::Transcript;
+use crate::stt::domain::Transcript;
 
 /// Every discrete progress signal the earnings pipeline can emit.
 ///
