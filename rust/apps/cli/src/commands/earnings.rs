@@ -65,9 +65,11 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
 
     let db_config = DbConfig::from_env().into_diagnostic()?;
     let db = Db::connect(&db_config).await.into_diagnostic()?;
-    let stt = factory::build_stt(ctx).await?;
 
-    let processor = EarningsProcessor::new(stt, db);
+    let stt = factory::build_stt(ctx).await?;
+    let embedder = factory::build_embedder(ctx).await?;
+
+    let processor = EarningsProcessor::new(stt, embedder, db);
 
     let observer = EarningsCliObserver::new(ctx.output, ctx.verbose);
 

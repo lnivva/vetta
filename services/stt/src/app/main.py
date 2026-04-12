@@ -16,7 +16,7 @@ import grpc
 from pythonjsonlogger.json import JsonFormatter
 
 from src.generated.speech import speech_pb2_grpc
-from src.generated.embed import embed_pb2_grpc
+from src.generated.embeddings import embeddings_pb2_grpc
 from src.app.embed_servicer import EmbeddingServicer
 from src.app.stt_servicer import SpeechToTextServicer
 from src.core.settings import load_settings
@@ -61,7 +61,7 @@ def serve(config_path: str):
         SpeechToTextServicer(settings), server
     )
 
-    embed_pb2_grpc.add_EmbeddingServiceServicer_to_server(
+    embeddings_pb2_grpc.add_EmbeddingServiceServicer_to_server(
         EmbeddingServicer(settings), server
     )
     # ───────────────────────────────────────────────────────────

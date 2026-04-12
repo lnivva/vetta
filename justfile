@@ -88,7 +88,7 @@ stt-proto: stt-clean-proto stt-venv
             code = f.read()
 
         # Safely rewrites 'from speech import' -> 'from src.generated.speech import'
-        # and 'from embed import' -> 'from src.generated.embed import'
+        # and 'from embeddings import' -> 'from src.generated.embeddings import'
         code = pattern.sub(r'from src.generated.\1 import', code)
 
         with open(p, 'w') as f:

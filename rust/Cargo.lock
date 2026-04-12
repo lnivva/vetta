@@ -2731,6 +2731,7 @@ dependencies = [
  "miette",
  "mongodb",
  "prost",
+ "prost-types",
  "serde",
  "tempfile",
  "thiserror",

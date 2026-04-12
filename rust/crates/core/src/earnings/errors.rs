@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::db::DbError;
 use crate::stt::SttError;
+use crate::embeddings::errors::EmbeddingError;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum IngestError {
@@ -70,6 +71,10 @@ pub enum EarningsError {
         help("This earnings call has already been processed. Use --replace to overwrite.")
     )]
     Duplicate(String),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Embedding(#[from] EmbeddingError),
 }
 
 impl From<DbError> for EarningsError {

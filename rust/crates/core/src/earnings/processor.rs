@@ -5,6 +5,7 @@ use tokio_stream::StreamExt;
 
 use crate::db::models::{MongoDocument, OptimizedChunk};
 use crate::db::{ChunkInput, Db, EarningsRepository, SegmentInput, StoreEarningsRequest};
+use crate::embeddings::domain::Embedder;
 use crate::stt::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, TranscribeOptions};
 
@@ -24,27 +25,17 @@ pub struct ProcessEarningsCallRequest {
 
 pub struct EarningsProcessor {
     stt: Box<dyn Stt>,
+    embedder: Box<dyn Embedder>,
     db: Db,
 }
 
 impl EarningsProcessor {
     /// Create a new processor with injected dependencies.
-    pub fn new(stt: Box<dyn Stt>, db: Db) -> Self {
-        Self { stt, db }
+    pub fn new(stt: Box<dyn Stt>, embedder: Box<dyn Embedder>, db: Db) -> Self {
+        Self { stt, embedder, db }
     }
 
     /// Runs the full pipeline, notifying the observer at each stage boundary.
-    ///
-    /// Pipeline stages:
-    /// 1. Command received
-    /// 2. Validate media file
-    /// 3. Duplicate check
-    /// 4. Transcription (STT + diarization)
-    /// 5. Chunk optimization (TODO)
-    /// 6. Persist earnings call & chunks
-    /// 7. Generate embeddings (TODO)
-    /// 8. Store embeddings (TODO)
-    /// 9. Pipeline summary
     pub async fn process(
         &self,
         request: ProcessEarningsCallRequest,
@@ -133,13 +124,19 @@ impl EarningsProcessor {
             chunk_count,
         });
 
-        // ── 7. Generate Embeddings (TODO) ────────────────────
-        self.generate_embeddings(chunk_count, observer);
+        // ── 7. Generate & Store Embeddings ────────────────────
+        let model_version = "voyage-4-large";
 
-        // ── 8. Store Embeddings (TODO) ───────────────────────
-        self.store_embeddings(chunk_count, observer);
+        self.process_embeddings(call_id, chunk_count, model_version, &repo, observer)
+            .await
+            .inspect_err(|e| {
+                observer.on_event(&EarningsEvent::PipelineFailed {
+                    stage: PipelineStage::Embedding,
+                    error_message: e.to_string(),
+                });
+            })?;
 
-        // ── 9. Pipeline Summary ──────────────────────────────
+        // ── 8. Pipeline Summary ──────────────────────────────
         let speaker_count = self.count_speakers(&transcript);
         let duration_secs = started_at.elapsed().as_secs_f64();
 
@@ -169,9 +166,6 @@ impl EarningsProcessor {
 
     // ── Private helpers ──────────────────────────────────────
 
-    /// Returns `Some(call_id_hex)` when a duplicate exists and `--replace` is set.
-    /// Returns `None` when no duplicate exists.
-    /// Returns `Err` when a duplicate exists and `--replace` is *not* set.
     async fn check_duplicate(
         &self,
         request: &ProcessEarningsCallRequest,
@@ -179,9 +173,7 @@ impl EarningsProcessor {
     ) -> Result<Option<String>, EarningsError> {
         let quarter = request.quarter.to_string();
 
-        let existing = repo
-            .find_call(&request.ticker, request.year, &quarter)
-            .await?;
+        let existing = repo.find_call(&request.ticker, request.year, &quarter).await?;
 
         match existing {
             Some(doc) => {
@@ -246,8 +238,6 @@ impl EarningsProcessor {
             });
         }
 
-        // Diarization is currently inline with transcription (whisper‑diarize),
-        // but we emit separate events so the CLI can report it distinctly.
         observer.on_event(&EarningsEvent::DiarizationStarted);
 
         let speaker_count = self.count_speakers_from_segments(&segments);
@@ -372,27 +362,6 @@ impl EarningsProcessor {
         preliminary_chunks
     }
 
-    /// TODO: Generate vector embeddings for each chunk.
-    fn generate_embeddings(&self, chunk_count: u32, observer: &dyn EarningsObserver) {
-        observer.on_event(&EarningsEvent::EmbeddingStarted { chunk_count });
-
-        // Placeholder: no actual embedding generation yet
-        observer.on_event(&EarningsEvent::EmbeddingProgress {
-            chunks_embedded: 0,
-            total_chunks: chunk_count,
-        });
-
-        observer.on_event(&EarningsEvent::EmbeddingComplete { chunk_count: 0 });
-    }
-
-    /// TODO: Persist embedding vectors to MongoDB.
-    fn store_embeddings(&self, chunk_count: u32, observer: &dyn EarningsObserver) {
-        observer.on_event(&EarningsEvent::StoringEmbeddings { chunk_count });
-
-        // Placeholder: no actual storage yet
-        observer.on_event(&EarningsEvent::EmbeddingsStored { chunk_count: 0 });
-    }
-
     async fn store(
         &self,
         request: &ProcessEarningsCallRequest,
@@ -447,6 +416,7 @@ impl EarningsProcessor {
                 .collect(),
         };
 
+        // Note: the ? operator automatically maps DbError to EarningsError using the From trait
         let call_id = if request.replace {
             repo.replace(store_request).await?
         } else {
@@ -454,6 +424,64 @@ impl EarningsProcessor {
         };
 
         Ok(call_id)
+    }
+
+    /// Fetches chunks for a call, generates vector embeddings in batches via gRPC,
+    /// stores them via concurrent updates, and marks the parent call as processed.
+    async fn process_embeddings(
+        &self,
+        call_id: mongodb::bson::oid::ObjectId,
+        chunk_count: u32,
+        model_version: &str,
+        repo: &EarningsRepository,
+        observer: &dyn EarningsObserver,
+    ) -> Result<(), EarningsError> {
+        observer.on_event(&EarningsEvent::EmbeddingStarted { chunk_count });
+
+        let chunks = repo.get_chunks(call_id).await?;
+
+        let batch_size = 120;
+        let mut updates: Vec<(mongodb::bson::oid::ObjectId, Vec<f32>)> = Vec::with_capacity(chunks.len());
+        let mut chunks_embedded = 0;
+        let mut embedding_dimension = 0u32;
+
+        for batch in chunks.chunks(batch_size) {
+            let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
+
+            let response = self
+                .embedder
+                .embed(model_version, texts, Some("document"), true)
+                .await?;
+
+            if embedding_dimension == 0 && !response.embeddings.is_empty() {
+                embedding_dimension = response.embeddings[0].vector.len() as u32;
+            }
+
+            for (i, embedding) in response.embeddings.into_iter().enumerate() {
+                if let Some(chunk_id) = batch[i].id {
+                    updates.push((chunk_id, embedding.vector));
+                }
+            }
+
+            chunks_embedded += batch.len() as u32;
+            observer.on_event(&EarningsEvent::EmbeddingProgress {
+                chunks_embedded,
+                total_chunks: chunk_count,
+            });
+        }
+
+        observer.on_event(&EarningsEvent::EmbeddingComplete { chunk_count });
+        observer.on_event(&EarningsEvent::StoringEmbeddings { chunk_count });
+
+        // Update chunks
+        repo.update_embeddings(updates, model_version).await?;
+
+        // Update the parent call document status and metadata
+        repo.mark_call_processed(call_id, model_version, embedding_dimension).await?;
+
+        observer.on_event(&EarningsEvent::EmbeddingsStored { chunk_count });
+
+        Ok(())
     }
 
     fn count_speakers(&self, transcript: &Transcript) -> u32 {

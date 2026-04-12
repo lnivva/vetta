@@ -131,6 +131,16 @@ resource "aws_security_group_rule" "mongodb_egress" {
   description       = "Allow outbound traffic to MongoDB Atlas"
 }
 
+resource "aws_security_group_rule" "allow_icmp_pmtud" {
+  type              = "ingress"
+  from_port         = 3 # ICMP Type 3: Destination Unreachable
+  to_port           = 4 # ICMP Code 4: Fragmentation Needed
+  protocol          = "icmp"
+  cidr_blocks       = ["0.0.0.0/0"]
+  security_group_id = aws_security_group.vetta_server_security_group.id
+  description       = "Allow inbound ICMP Fragmentation Needed for Path MTU Discovery"
+}
+
 resource "aws_instance" "vetta_ec2" {
   ami                         = data.aws_ssm_parameter.ubuntu_2404_ami.value
   associate_public_ip_address = true

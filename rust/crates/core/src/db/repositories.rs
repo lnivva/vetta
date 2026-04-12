@@ -206,9 +206,13 @@ impl EarningsRepository {
                 end_time: c.end_time,
                 text: c.text.clone(),
                 embedding: None,
+                previous_text: c.previous_text.clone(),
+                previous_speaker: c.previous_speaker.clone(),
+                next_text: c.next_text.clone(),
+                next_speaker: c.next_speaker.clone(),
                 word_count: c.word_count,
                 token_count: None,
-                model_version: ctx.stt_model.clone(),
+                embedding_model: None,
                 created_at: ctx.now,
             })
             .collect();
@@ -285,7 +289,7 @@ impl EarningsRepository {
                             doc! {
                                 "$set": {
                                     "embedding": embedding_bson,
-                                    "model_version": model_ver,
+                                    "embedding_model": model_ver,
                                 }
                             },
                         )
@@ -318,7 +322,7 @@ impl EarningsRepository {
             .find(doc! {
                 "$or": [
                     { "embedding": null },
-                    { "model_version": { "$ne": current_model } }
+                    { "embedding_model": { "$ne": current_model } }
                 ]
             })
             .projection(doc! { "_id": 1 })
@@ -385,13 +389,36 @@ impl EarningsRepository {
 
         Ok(())
     }
+
+    #[instrument(skip(self))]
+    pub async fn mark_call_processed(
+        &self,
+        call_id: ObjectId,
+        embedding_model: &str,
+        embedding_dimensions: u32,
+    ) -> Result<(), DbError> {
+        let now = DateTime::now();
+
+        self.calls.update_one(
+            doc! { "_id": call_id },
+            doc! {
+                "$set": {
+                    "status": "processed",
+                    "model_versions.embedding": embedding_model,
+                    "model_versions.embedding_dimensions": embedding_dimensions,
+                    "updated_at": now,
+                }
+            },
+        ).await?;
+
+        Ok(())
+    }
 }
 
 struct StoreTransactionContext {
     ticker: String,
     year: u16,
     quarter: String,
-    stt_model: String,
     now: DateTime,
 }
 
@@ -401,7 +428,6 @@ impl StoreTransactionContext {
             ticker: doc.ticker.clone(),
             year: doc.year,
             quarter: doc.quarter.clone(),
-            stt_model: doc.model_versions.stt.clone(),
             now,
         }
     }

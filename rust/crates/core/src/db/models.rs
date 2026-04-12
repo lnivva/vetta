@@ -97,8 +97,17 @@ pub struct EarningsChunkDocument {
     pub word_count: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token_count: Option<u32>,
-    pub model_version: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embedding_model: Option<String>,
     pub created_at: DateTime,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_speaker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_speaker: Option<String>,
 }
 
 impl MongoDocument for EarningsChunkDocument {
