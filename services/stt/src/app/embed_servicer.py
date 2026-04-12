@@ -28,14 +28,20 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
         truncate = request.truncate
 
         input_type = request.input_type if request.HasField("input_type") else None
-        output_dim = request.output_dimension if request.HasField("output_dimension") else None
+        output_dim = (
+            request.output_dimension if request.HasField("output_dimension") else None
+        )
 
         if not inputs:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Inputs list cannot be empty.")
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Inputs list cannot be empty."
+            )
             return None
 
         if not model:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Model identifier cannot be empty.")
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT, "Model identifier cannot be empty."
+            )
             return None
 
         try:
@@ -44,7 +50,7 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
                 inputs=inputs,
                 input_type=input_type,
                 truncate=truncate,
-                output_dimension=output_dim
+                output_dimension=output_dim,
             )
 
             # 4. Pack and Return Response
@@ -54,7 +60,9 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
         except EmbeddingsError:
             logger.exception("Embedding generation failed")
-            context.abort(grpc.StatusCode.INTERNAL, "Failed to generate embeddings via provider.")
+            context.abort(
+                grpc.StatusCode.INTERNAL, "Failed to generate embeddings via provider."
+            )
         except Exception:
             logger.exception("Unexpected error in EmbeddingsEngine")
             context.abort(grpc.StatusCode.INTERNAL, "An unexpected error occurred.")
@@ -67,14 +75,11 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
         return embeddings_pb2.EmbeddingResponse(
             model=domain_response.model,
             data=[
-                embeddings_pb2.Embedding(
-                    vector=emb.vector,
-                    index=emb.index
-                )
+                embeddings_pb2.Embedding(vector=emb.vector, index=emb.index)
                 for emb in domain_response.embeddings
             ],
             usage=embeddings_pb2.Usage(
                 prompt_tokens=domain_response.prompt_tokens,
-                total_tokens=domain_response.total_tokens
-            )
+                total_tokens=domain_response.total_tokens,
+            ),
         )

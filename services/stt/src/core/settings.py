@@ -24,7 +24,7 @@ class ServiceConfig:
     def socket_path(self) -> str | None:
         """Return the filesystem path if this is a UDS address, else None."""
         if self.is_unix_socket:
-            return self.address[len("unix://"):]
+            return self.address[len("unix://") :]
         return None
 
 
@@ -59,6 +59,7 @@ class ConcurrencyConfig:
 @dataclass
 class DiarizationConfig:
     """Configuration for the optional pyannote speaker-diarization pipeline."""
+
     enabled: bool
     model: str
     device: Device
@@ -69,6 +70,7 @@ class DiarizationConfig:
 @dataclass
 class EmbeddingsConfig:
     """Configuration for the text embeddings provider (Voyage AI)."""
+
     api_key: str = field(repr=False)
 
 
@@ -256,7 +258,7 @@ def _env(section: str, key: str, fallback: str) -> str: ...
 
 
 def _env(
-        section: str, key: str, fallback: str | bool | int | float
+    section: str, key: str, fallback: str | bool | int | float
 ) -> str | bool | int | float:
     """
     Read WHISPER_<SECTION>_<KEY> from environment, cast to type of fallback.
@@ -422,7 +424,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
         ),
         embeddings=EmbeddingsConfig(
             api_key=_env("embeddings", "api_key", str(emb.get("api_key", "")))
-        )
+        ),
     )
 
     hf_token = settings.model.hf_token
@@ -455,7 +457,9 @@ def _print_summary(s: Settings):
     print(f"  Compute type   : {s.model.compute_type}")
     print(f"  Model          : {s.model.size}")
     print(f"  HF Token       : {'<configured>' if s.model.hf_token else '<missing>'}")
-    print(f"  Emb API Key    : {'<configured>' if s.embeddings.api_key else '<missing>'}")
+    print(
+        f"  Emb API Key    : {'<configured>' if s.embeddings.api_key else '<missing>'}"
+    )
     print(f"  CPU threads    : {s.concurrency.cpu_threads}")
     print(f"  Max workers    : {s.concurrency.max_workers}")
     print(f"  Address        : {s.service.address}")

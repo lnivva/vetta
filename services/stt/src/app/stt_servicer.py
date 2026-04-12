@@ -50,7 +50,7 @@ class SpeechToTextServicer(speech_pb2_grpc.SpeechToTextServicer):
                 diarize=diarize,
                 num_speakers=num_speakers,
                 language=language,
-                initial_prompt=prompt
+                initial_prompt=prompt,
             )
 
             for domain_chunk in chunk_generator:

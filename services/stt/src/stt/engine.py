@@ -22,6 +22,7 @@ def _load_diarization():
     """
     try:
         from src.diarization.pipeline import DiarizationPipeline, DiarizationResult
+
         return DiarizationPipeline, DiarizationResult
     except ImportError as e:
         raise RuntimeError("Diarization dependencies are not installed.") from e
@@ -55,12 +56,12 @@ class TranscriptionEngine:
         self._executor = ThreadPoolExecutor(max_workers=2)
 
     def transcribe(
-            self,
-            audio_data: bytes,
-            diarize: bool = False,
-            num_speakers: int = 0,
-            language: Optional[str] = None,
-            initial_prompt: Optional[str] = None
+        self,
+        audio_data: bytes,
+        diarize: bool = False,
+        num_speakers: int = 0,
+        language: Optional[str] = None,
+        initial_prompt: Optional[str] = None,
     ) -> Iterator[TranscriptChunkResult]:
         """
         Executes the STT pipeline.
@@ -119,21 +120,27 @@ class TranscriptionEngine:
         for segment in segments:
             # Fast path: No diarization, or no word-level timestamps to align
             if diarization is None or not segment.words:
-                speaker = diarization.speaker_at(segment.start, segment.end) if diarization else ""
+                speaker = (
+                    diarization.speaker_at(segment.start, segment.end)
+                    if diarization
+                    else ""
+                )
                 yield self._build_chunk(segment, speaker)
                 continue
 
             # Complex path: Split the Whisper segment by word-level speaker boundaries
-            segment_dominant_speaker = diarization.speaker_at(segment.start, segment.end)
+            segment_dominant_speaker = diarization.speaker_at(
+                segment.start, segment.end
+            )
             current_speaker = None
             current_words = []
 
             for w in segment.words:
                 word_speaker = (
-                        diarization.speaker_at(w.start, w.end)
-                        or current_speaker
-                        or segment_dominant_speaker
-                        or ""
+                    diarization.speaker_at(w.start, w.end)
+                    or current_speaker
+                    or segment_dominant_speaker
+                    or ""
                 )
 
                 if current_speaker is None:
@@ -142,7 +149,9 @@ class TranscriptionEngine:
                 # If the speaker changes mid-segment, yield the accumulated words
                 if word_speaker != current_speaker:
                     if current_words:
-                        yield self._build_words_chunk(current_words, current_speaker, segment.avg_logprob)
+                        yield self._build_words_chunk(
+                            current_words, current_speaker, segment.avg_logprob
+                        )
                     current_speaker = word_speaker
                     current_words = [w]
                 else:
@@ -150,7 +159,9 @@ class TranscriptionEngine:
 
             # Yield any remaining words in the segment
             if current_words:
-                yield self._build_words_chunk(current_words, current_speaker, segment.avg_logprob)
+                yield self._build_words_chunk(
+                    current_words, current_speaker, segment.avg_logprob
+                )
 
     # ── Internal Helpers ──────────────────────────────
 
@@ -162,7 +173,7 @@ class TranscriptionEngine:
                 end_time=w.end,
                 text=w.word,
                 confidence=w.probability,
-                speaker_id=speaker_id
+                speaker_id=speaker_id,
             )
             for w in (segment.words or [])
         ]
@@ -172,18 +183,20 @@ class TranscriptionEngine:
             text=segment.text.strip(),
             speaker_id=speaker_id,
             confidence=segment.avg_logprob,
-            words=words
+            words=words,
         )
 
     @staticmethod
-    def _build_words_chunk(words: list, speaker_id: str, confidence: float) -> TranscriptChunkResult:
+    def _build_words_chunk(
+        words: list, speaker_id: str, confidence: float
+    ) -> TranscriptChunkResult:
         word_segments = [
             WordSegment(
                 start_time=w.start,
                 end_time=w.end,
                 text=w.word,
                 confidence=w.probability,
-                speaker_id=speaker_id
+                speaker_id=speaker_id,
             )
             for w in words
         ]
@@ -193,5 +206,5 @@ class TranscriptionEngine:
             text="".join(w.word for w in words).strip(),
             speaker_id=speaker_id,
             confidence=confidence,
-            words=word_segments
+            words=word_segments,
         )

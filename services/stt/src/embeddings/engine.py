@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 class EmbeddingsError(Exception):
     """Custom exception raised when the upstream provider fails."""
+
     pass
 
 
@@ -21,7 +22,9 @@ class EmbeddingsEngine:
     """
 
     def __init__(self, settings: Settings):
-        api_key = settings.embeddings.api_key if hasattr(settings, "embeddings") else None
+        api_key = (
+            settings.embeddings.api_key if hasattr(settings, "embeddings") else None
+        )
 
         if not api_key:
             logger.warning("No embeddings API key found in settings. Engine may fail.")
@@ -29,12 +32,12 @@ class EmbeddingsEngine:
         self.client = voyageai.Client(api_key=api_key)
 
     def embed(
-            self,
-            model: str,
-            inputs: List[str],
-            input_type: Optional[str] = None,
-            truncate: bool = True,
-            output_dimension: Optional[int] = None
+        self,
+        model: str,
+        inputs: List[str],
+        input_type: Optional[str] = None,
+        truncate: bool = True,
+        output_dimension: Optional[int] = None,
     ) -> DomainEmbeddingResponse:
         """
         Takes raw text inputs and returns domain embedding objects.

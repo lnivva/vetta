@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 @dataclass
 class SpeakerSegment:
     """A speaker-labeled time range extracted from diarization output."""
+
     start: float
     end: float
     speaker: str
@@ -146,10 +147,10 @@ class DiarizationPipeline:
         raise TypeError(f"Cannot extract Annotation from {type(result).__name__}")
 
     def run(
-            self,
-            audio_input: str | io.BytesIO,
-            min_speakers: int = 0,
-            max_speakers: int = 0,
+        self,
+        audio_input: str | io.BytesIO,
+        min_speakers: int = 0,
+        max_speakers: int = 0,
     ) -> DiarizationResult:
         """
         Run diarization on an audio file path or in-memory audio buffer.
