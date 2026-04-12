@@ -77,7 +77,7 @@ class TranscriptionEngine:
             diarization_pipeline, _ = _load_diarization()
             self.diarizer = diarization_pipeline(self._diarization_config)
 
-            # ── Preprocess ────────────────────────────────
+        # ── Preprocess ────────────────────────────────
         whisper_input, diar_input = self._preprocessor.prepare(
             audio_data,
             diarize=diarize,
@@ -97,7 +97,7 @@ class TranscriptionEngine:
                 max_speakers=num_speakers,
             )
 
-            # ── Phase 2: Whisper ──────────────────────────
+        # ── Phase 2: Whisper ──────────────────────────
         # Whisper runs in the main thread concurrently with diarization
         use_word_timestamps = inf.word_timestamps or diarize
         segments, info = self.model.transcribe(
@@ -131,7 +131,7 @@ class TranscriptionEngine:
                 yield self._build_chunk(segment, speaker)
                 continue
 
-                # Complex path: Split the Whisper segment by word-level speaker boundaries
+            # Complex path: Split the Whisper segment by word-level speaker boundaries
             segment_dominant_speaker = diarization.speaker_at(
                 segment.start, segment.end
             )
@@ -149,7 +149,7 @@ class TranscriptionEngine:
                 if current_speaker is None:
                     current_speaker = word_speaker
 
-                    # If the speaker changes mid-segment, yield the accumulated words
+                # If the speaker changes mid-segment, yield the accumulated words
                 if word_speaker != current_speaker:
                     if current_words:
                         yield self._build_words_chunk(
@@ -160,13 +160,12 @@ class TranscriptionEngine:
                 else:
                     current_words.append(w)
 
-                    # Yield any remaining words in the segment
+            # Yield any remaining words in the segment
             if current_words:
                 yield self._build_words_chunk(
                     current_words, current_speaker or "", segment.avg_logprob
                 )
 
-                # ── Internal Helpers ──────────────────────────────
 
     @staticmethod
     def _build_chunk(segment, speaker_id: str) -> TranscriptChunkResult:
