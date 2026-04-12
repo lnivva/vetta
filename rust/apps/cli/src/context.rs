@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use crate::cli::CliOutputOptions;
+use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct AppContext {

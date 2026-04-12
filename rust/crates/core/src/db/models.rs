@@ -1,5 +1,5 @@
-use mongodb::bson::oid::ObjectId;
 use mongodb::bson::DateTime;
+use mongodb::bson::oid::ObjectId;
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::Display;
@@ -73,7 +73,6 @@ impl MongoDocument for EarningsCallDocument {
     }
 }
 
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EarningsChunkDocument {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
@@ -117,7 +116,6 @@ impl MongoDocument for EarningsChunkDocument {
         self.id
     }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct OptimizedChunk {

@@ -1,7 +1,7 @@
-use miette::{IntoDiagnostic, Result};
-use vetta_core::{Embedder, LocalEmbeddingsStrategy};
 use crate::context::AppContext;
+use miette::{IntoDiagnostic, Result};
 use vetta_core::stt::{LocalSttStrategy, Stt};
+use vetta_core::{Embedder, LocalEmbeddingsStrategy};
 
 pub async fn build_stt(ctx: &AppContext) -> Result<Box<dyn Stt>> {
     let stt = LocalSttStrategy::connect(&ctx.socket)

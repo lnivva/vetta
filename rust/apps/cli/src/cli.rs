@@ -12,7 +12,12 @@ use crate::commands::earnings::EarningsAction;
     arg_required_else_help = true
 )]
 pub struct Cli {
-    #[arg(long, env = "WHISPER_SOCK", default_value = "/tmp/whisper.sock", global = true)]
+    #[arg(
+        long,
+        env = "WHISPER_SOCK",
+        default_value = "/tmp/whisper.sock",
+        global = true
+    )]
     pub socket: PathBuf,
 
     #[arg(short, long, global = true)]
@@ -21,7 +26,7 @@ pub struct Cli {
     #[arg(long, global = true, env = "VETTA_DEBUG")]
     pub debug: bool,
 
-    #[arg(short, global = true, long, value_enum, default_value_t = CliOutputOptions::JSON)]
+    #[arg(short, global = true, long, value_enum, default_value_t = CliOutputOptions::Json)]
     pub output: CliOutputOptions,
 
     #[command(subcommand)]
@@ -38,6 +43,6 @@ pub enum Command {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
 pub enum CliOutputOptions {
-    JSON,
+    Json,
     Plain,
 }

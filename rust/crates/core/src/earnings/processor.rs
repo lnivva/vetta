@@ -108,7 +108,13 @@ impl EarningsProcessor {
         observer.on_event(&EarningsEvent::StoringCall { chunk_count });
 
         let call_id = self
-            .store(&request, &transcript, &optimized_chunks, &format_info, &repo)
+            .store(
+                &request,
+                &transcript,
+                &optimized_chunks,
+                &format_info,
+                &repo,
+            )
             .await
             .inspect_err(|e| {
                 observer.on_event(&EarningsEvent::PipelineFailed {
@@ -173,7 +179,9 @@ impl EarningsProcessor {
     ) -> Result<Option<String>, EarningsError> {
         let quarter = request.quarter.to_string();
 
-        let existing = repo.find_call(&request.ticker, request.year, &quarter).await?;
+        let existing = repo
+            .find_call(&request.ticker, request.year, &quarter)
+            .await?;
 
         match existing {
             Some(doc) => {
@@ -278,7 +286,9 @@ impl EarningsProcessor {
             }
 
             if let Some(mut c) = current_chunk.take() {
-                if c.speaker_id == seg.speaker_id && (c.word_count as usize + seg_word_count) <= TARGET_WORD_COUNT {
+                if c.speaker_id == seg.speaker_id
+                    && (c.word_count as usize + seg_word_count) <= TARGET_WORD_COUNT
+                {
                     c.text.push_str(&seg.text);
                     c.end_time = seg.end_time;
                     c.word_count += seg_word_count as u32;
@@ -336,11 +346,27 @@ impl EarningsProcessor {
 
         let final_count = preliminary_chunks.len();
         for i in 0..final_count {
-            let prev_text = if i > 0 { Some(preliminary_chunks[i - 1].text.clone()) } else { None };
-            let prev_speaker = if i > 0 { Some(preliminary_chunks[i - 1].speaker_id.clone()) } else { None };
+            let prev_text = if i > 0 {
+                Some(preliminary_chunks[i - 1].text.clone())
+            } else {
+                None
+            };
+            let prev_speaker = if i > 0 {
+                Some(preliminary_chunks[i - 1].speaker_id.clone())
+            } else {
+                None
+            };
 
-            let next_text = if i < final_count.saturating_sub(1) { Some(preliminary_chunks[i + 1].text.clone()) } else { None };
-            let next_speaker = if i < final_count.saturating_sub(1) { Some(preliminary_chunks[i + 1].speaker_id.clone()) } else { None };
+            let next_text = if i < final_count.saturating_sub(1) {
+                Some(preliminary_chunks[i + 1].text.clone())
+            } else {
+                None
+            };
+            let next_speaker = if i < final_count.saturating_sub(1) {
+                Some(preliminary_chunks[i + 1].speaker_id.clone())
+            } else {
+                None
+            };
 
             preliminary_chunks[i].previous_text = prev_text;
             preliminary_chunks[i].previous_speaker = prev_speaker;
@@ -355,9 +381,7 @@ impl EarningsProcessor {
             total_chunks: final_chunk_count,
         });
 
-        observer.on_event(&EarningsEvent::ChunkOptimizationComplete {
-            final_chunk_count,
-        });
+        observer.on_event(&EarningsEvent::ChunkOptimizationComplete { final_chunk_count });
 
         preliminary_chunks
     }
@@ -416,7 +440,6 @@ impl EarningsProcessor {
                 .collect(),
         };
 
-        // Note: the ? operator automatically maps DbError to EarningsError using the From trait
         let call_id = if request.replace {
             repo.replace(store_request).await?
         } else {
@@ -441,7 +464,8 @@ impl EarningsProcessor {
         let chunks = repo.get_chunks(call_id).await?;
 
         let batch_size = 120;
-        let mut updates: Vec<(mongodb::bson::oid::ObjectId, Vec<f32>)> = Vec::with_capacity(chunks.len());
+        let mut updates: Vec<(mongodb::bson::oid::ObjectId, Vec<f32>)> =
+            Vec::with_capacity(chunks.len());
         let mut chunks_embedded = 0;
         let mut embedding_dimension = 0u32;
 
@@ -477,7 +501,8 @@ impl EarningsProcessor {
         repo.update_embeddings(updates, model_version).await?;
 
         // Update the parent call document status and metadata
-        repo.mark_call_processed(call_id, model_version, embedding_dimension).await?;
+        repo.mark_call_processed(call_id, model_version, embedding_dimension)
+            .await?;
 
         observer.on_event(&EarningsEvent::EmbeddingsStored { chunk_count });
 

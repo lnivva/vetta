@@ -2,8 +2,8 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 use crate::db::DbError;
-use crate::stt::SttError;
 use crate::embeddings::errors::EmbeddingError;
+use crate::stt::SttError;
 
 #[derive(Error, Debug, Diagnostic)]
 pub enum IngestError {

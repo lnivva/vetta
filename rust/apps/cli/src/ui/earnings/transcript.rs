@@ -11,12 +11,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
     writeln!(out).into_diagnostic()?;
     writeln!(out, "{INDENT}{}", separator()).into_diagnostic()?;
 
-    writeln!(
-        out,
-        "{INDENT}{}",
-        Styles::heading().apply_to("TRANSCRIPT")
-    )
-        .into_diagnostic()?;
+    writeln!(out, "{INDENT}{}", Styles::heading().apply_to("TRANSCRIPT")).into_diagnostic()?;
 
     writeln!(
         out,
@@ -27,7 +22,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         Styles::dimmed().apply_to(DOT),
         Styles::stat().apply_to(timestamp(transcript.duration() as f64)),
     )
-        .into_diagnostic()?;
+    .into_diagnostic()?;
 
     writeln!(out, "{INDENT}{}", separator()).into_diagnostic()?;
     writeln!(out).into_diagnostic()?;
@@ -54,7 +49,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
             Styles::speaker(idx).apply_to(speaker),
             Styles::dimmed().apply_to(format!("{DOT} {}", timestamp(turn.start_time as f64))),
         )
-            .into_diagnostic()?;
+        .into_diagnostic()?;
 
         for line in textwrap::fill(turn.text.trim(), text_width()).lines() {
             writeln!(out, "{prefix}{line}").into_diagnostic()?;
@@ -69,7 +64,7 @@ pub fn print_transcript(transcript: &Transcript) -> Result<()> {
         "{}",
         kv_msg("Total Duration", &timestamp(transcript.duration() as f64))
     )
-        .into_diagnostic()?;
+    .into_diagnostic()?;
 
     writeln!(out).into_diagnostic()?;
 

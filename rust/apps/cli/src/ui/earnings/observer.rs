@@ -1,8 +1,8 @@
-use indicatif::ProgressBar;
-use vetta_core::stt::domain::Transcript;
-use vetta_core::earnings::{EarningsObserver, PipelineStage};
 use crate::cli::CliOutputOptions;
 use crate::ui::{self, ARROW, Styles, error_msg, success_msg, warn_msg};
+use indicatif::ProgressBar;
+use vetta_core::earnings::{EarningsObserver, PipelineStage};
+use vetta_core::stt::domain::Transcript;
 
 pub struct EarningsCliObserver {
     spinner: ProgressBar,
@@ -12,7 +12,7 @@ pub struct EarningsCliObserver {
 
 impl EarningsCliObserver {
     pub fn new(output_option: CliOutputOptions, verbose: bool) -> Self {
-        let spinner = if output_option == CliOutputOptions::JSON || !verbose {
+        let spinner = if output_option == CliOutputOptions::Json || !verbose {
             ProgressBar::hidden()
         } else {
             ui::spinner()
@@ -155,7 +155,9 @@ impl EarningsObserver for EarningsCliObserver {
                     "Embeddings generated ({chunk_count} chunks)"
                 )));
             } else {
-                self.spinner.println(warn_msg("Embedding generation skipped (not yet implemented)"));
+                self.spinner.println(warn_msg(
+                    "Embedding generation skipped (not yet implemented)",
+                ));
             }
         }
     }
@@ -172,7 +174,8 @@ impl EarningsObserver for EarningsCliObserver {
                     "Embeddings stored ({chunk_count} chunks)"
                 )));
             } else {
-                self.spinner.println(warn_msg("Embedding storage skipped (not yet implemented)"));
+                self.spinner
+                    .println(warn_msg("Embedding storage skipped (not yet implemented)"));
             }
         }
     }

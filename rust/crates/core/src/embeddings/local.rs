@@ -11,8 +11,8 @@ pub mod pb {
     tonic::include_proto!("embeddings");
 }
 
-use pb::embedding_service_client::EmbeddingServiceClient;
 use pb::EmbeddingRequest;
+use pb::embedding_service_client::EmbeddingServiceClient;
 
 pub struct LocalEmbeddingsStrategy {
     socket_path: PathBuf,
@@ -23,7 +23,9 @@ impl LocalEmbeddingsStrategy {
         let path = socket.as_ref();
 
         if !path.exists() {
-            return Err(EmbeddingError::SocketNotFound(path.to_string_lossy().to_string()));
+            return Err(EmbeddingError::SocketNotFound(
+                path.to_string_lossy().to_string(),
+            ));
         }
 
         Ok(Self {
@@ -31,7 +33,9 @@ impl LocalEmbeddingsStrategy {
         })
     }
 
-    async fn client(&self) -> Result<EmbeddingServiceClient<tonic::transport::Channel>, EmbeddingError> {
+    async fn client(
+        &self,
+    ) -> Result<EmbeddingServiceClient<tonic::transport::Channel>, EmbeddingError> {
         let path = self.socket_path.clone();
 
         let channel = Endpoint::try_from("http://localhost")?

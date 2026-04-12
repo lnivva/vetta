@@ -1,10 +1,14 @@
-use crate::db::models::{CallStatus, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument, ModelVersions, MongoDocument, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData, TranscriptStats};
+use crate::db::models::{
+    CallStatus, ChunkSpeaker, ChunkType, EarningsCallDocument, EarningsChunkDocument,
+    ModelVersions, MongoDocument, SegmentData, SourceMetadata, SpeakerInfo, TranscriptData,
+    TranscriptStats,
+};
 use crate::db::{Db, DbError};
 use serde::Deserialize;
 use tracing::{debug, error, info, instrument, warn};
 
 use futures::{StreamExt, TryStreamExt};
-use mongodb::bson::{doc, oid::ObjectId, serialize_to_bson, DateTime};
+use mongodb::bson::{DateTime, doc, oid::ObjectId, serialize_to_bson};
 use mongodb::{Client, Collection};
 
 const CALLS_COLLECTION: &str = "earnings_calls";
@@ -141,7 +145,9 @@ impl EarningsRepository {
             .session(&mut *session)
             .await?
         {
-            let call_id = existing.id().map_err(|e| DbError::Serialization(e.to_string()))?;
+            let call_id = existing
+                .id()
+                .map_err(|e| DbError::Serialization(e.to_string()))?;
             debug!(call_id = %call_id, "Found existing call for business key, replacing...");
 
             self.chunks
@@ -399,17 +405,19 @@ impl EarningsRepository {
     ) -> Result<(), DbError> {
         let now = DateTime::now();
 
-        self.calls.update_one(
-            doc! { "_id": call_id },
-            doc! {
-                "$set": {
-                    "status": "processed",
-                    "model_versions.embedding": embedding_model,
-                    "model_versions.embedding_dimensions": embedding_dimensions,
-                    "updated_at": now,
-                }
-            },
-        ).await?;
+        self.calls
+            .update_one(
+                doc! { "_id": call_id },
+                doc! {
+                    "$set": {
+                        "status": "processed",
+                        "model_versions.embedding": embedding_model,
+                        "model_versions.embedding_dimensions": embedding_dimensions,
+                        "updated_at": now,
+                    }
+                },
+            )
+            .await?;
 
         Ok(())
     }

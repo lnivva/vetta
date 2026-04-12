@@ -1,12 +1,8 @@
 pub mod db;
-pub mod stt;
 mod embeddings;
+pub mod stt;
 
-pub use embeddings::{
-    Embedder,
-    LocalEmbeddingsStrategy,
-    EmbeddingError,
-};
+pub use embeddings::{Embedder, EmbeddingError, LocalEmbeddingsStrategy};
 
 pub mod earnings {
     //! Public API for the earnings pipeline.

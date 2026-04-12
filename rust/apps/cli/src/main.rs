@@ -17,11 +17,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 async fn main() -> Result<()> {
     let cli = cli::Cli::parse();
 
-    let log_level = if cli.debug {
-        "debug"
-    } else {
-        "error"
-    };
+    let log_level = if cli.debug { "debug" } else { "error" };
 
     let subscriber = FmtSubscriber::builder()
         .with_writer(io::stderr)

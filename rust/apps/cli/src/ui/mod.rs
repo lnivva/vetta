@@ -92,11 +92,19 @@ pub fn success_msg(msg: &str) -> String {
 }
 
 pub fn error_msg(msg: &str) -> String {
-    format!("{INDENT}{} {}", Styles::error().apply_to(ERROR), Styles::error().apply_to(msg))
+    format!(
+        "{INDENT}{} {}",
+        Styles::error().apply_to(ERROR),
+        Styles::error().apply_to(msg)
+    )
 }
 
 pub fn warn_msg(msg: &str) -> String {
-    format!("{INDENT}{} {}", Styles::warning().apply_to(WARN), Styles::warning().apply_to(msg))
+    format!(
+        "{INDENT}{} {}",
+        Styles::warning().apply_to(WARN),
+        Styles::warning().apply_to(msg)
+    )
 }
 
 pub fn info_msg(msg: &str) -> String {

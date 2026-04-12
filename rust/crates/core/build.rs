@@ -14,10 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tonic_prost_build::configure()
         .build_server(false)
-        .compile_protos(
-            &[speech_proto, embeddings_proto],
-            &[proto_dir],
-        )?;
+        .compile_protos(&[speech_proto, embeddings_proto], &[proto_dir])?;
 
     Ok(())
 }

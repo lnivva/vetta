@@ -3,15 +3,15 @@ use miette::{IntoDiagnostic, Result};
 use std::path::PathBuf;
 
 use crate::{
+    cli::CliOutputOptions,
     context::AppContext,
     infra::factory,
     ui::earnings::{EarningsCliObserver, print_transcript},
-    cli::CliOutputOptions,
 };
 
 use vetta_core::db::{Db, DbConfig};
-use vetta_core::stt::domain::Quarter as CoreQuarter;
 use vetta_core::earnings::{EarningsProcessor, ProcessEarningsCallRequest};
+use vetta_core::stt::domain::Quarter as CoreQuarter;
 
 #[derive(Debug, Clone, ValueEnum)]
 pub enum CliQuarter {
@@ -89,7 +89,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         .into_diagnostic()?;
 
     match ctx.output {
-        CliOutputOptions::JSON => {
+        CliOutputOptions::Json => {
             let json_out = serde_json::to_string_pretty(&transcript).into_diagnostic()?;
             println!("{json_out}");
         }
