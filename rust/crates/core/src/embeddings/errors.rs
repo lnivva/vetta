@@ -1,3 +1,4 @@
+use crate::common::UdsChannelError;
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -13,6 +14,10 @@ pub enum EmbeddingError {
     #[error("Socket not found: {0}")]
     #[diagnostic(help("Start the vetta daemon or check the socket path in config.toml"))]
     SocketNotFound(String),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Channel(#[from] UdsChannelError),
 }
 
 impl From<tonic::Status> for EmbeddingError {

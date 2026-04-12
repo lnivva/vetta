@@ -1,11 +1,8 @@
 use super::domain::{DomainEmbedding, DomainEmbeddingResponse, Embedder};
 use super::errors::EmbeddingError;
+use crate::common::UdsChannel;
 use async_trait::async_trait;
-use hyper_util::rt::TokioIo;
-use std::path::{Path, PathBuf};
-use tokio::net::UnixStream;
-use tonic::transport::{Endpoint, Uri};
-use tower::service_fn;
+use std::path::Path;
 
 pub mod pb {
     tonic::include_proto!("embeddings");
@@ -15,37 +12,20 @@ use pb::EmbeddingRequest;
 use pb::embedding_service_client::EmbeddingServiceClient;
 
 pub struct LocalEmbeddingsStrategy {
-    socket_path: PathBuf,
+    channel: UdsChannel,
 }
 
 impl LocalEmbeddingsStrategy {
     pub async fn connect(socket: impl AsRef<Path>) -> Result<Self, EmbeddingError> {
-        let path = socket.as_ref();
-
-        if !path.exists() {
-            return Err(EmbeddingError::SocketNotFound(
-                path.to_string_lossy().to_string(),
-            ));
-        }
-
-        Ok(Self {
-            socket_path: path.to_path_buf(),
-        })
+        let channel = UdsChannel::new(socket)?;
+        Ok(Self { channel })
     }
 
     async fn client(
         &self,
     ) -> Result<EmbeddingServiceClient<tonic::transport::Channel>, EmbeddingError> {
-        let path = self.socket_path.clone();
-
-        let channel = Endpoint::try_from("http://localhost")?
-            .connect_with_connector(service_fn(move |_: Uri| {
-                let path = path.clone();
-                async move { UnixStream::connect(&path).await.map(TokioIo::new) }
-            }))
-            .await?;
-
-        Ok(EmbeddingServiceClient::new(channel))
+        let ch = self.channel.connect().await?;
+        Ok(EmbeddingServiceClient::new(ch))
     }
 }
 

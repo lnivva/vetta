@@ -1,3 +1,4 @@
+mod common;
 pub mod db;
 mod embeddings;
 pub mod stt;

@@ -1,50 +1,32 @@
 use super::{Stt, SttError, TranscribeOptions, TranscriptChunk, TranscriptStream, Word};
 use async_trait::async_trait;
-use hyper_util::rt::TokioIo;
-use std::path::{Path, PathBuf};
-use tokio::net::UnixStream;
+use std::path::Path;
 use tokio_stream::StreamExt;
 use tonic::Status;
-use tonic::transport::{Endpoint, Uri};
-use tower::service_fn;
 
 pub mod proto {
     tonic::include_proto!("speech");
 }
 
+use crate::common::UdsChannel;
 use proto::{
     TranscribeOptions as ProtoOptions, TranscribeRequest,
     speech_to_text_client::SpeechToTextClient, transcribe_request::AudioSource,
 };
 
 pub struct LocalSttStrategy {
-    socket_path: PathBuf,
+    channel: UdsChannel,
 }
 
 impl LocalSttStrategy {
     pub async fn connect(socket: impl AsRef<Path>) -> Result<Self, SttError> {
-        let path = socket.as_ref();
-
-        if !path.exists() {
-            return Err(SttError::SocketNotFound(path.to_string_lossy().to_string()));
-        }
-
-        Ok(Self {
-            socket_path: path.to_path_buf(),
-        })
+        let channel = UdsChannel::new(socket)?;
+        Ok(Self { channel })
     }
 
     async fn client(&self) -> Result<SpeechToTextClient<tonic::transport::Channel>, SttError> {
-        let path = self.socket_path.clone();
-
-        let channel = Endpoint::try_from("http://localhost")?
-            .connect_with_connector(service_fn(move |_: Uri| {
-                let path = path.clone();
-                async move { UnixStream::connect(&path).await.map(TokioIo::new) }
-            }))
-            .await?;
-
-        Ok(SpeechToTextClient::new(channel))
+        let ch = self.channel.connect().await?;
+        Ok(SpeechToTextClient::new(ch))
     }
 }
 

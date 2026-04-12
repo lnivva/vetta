@@ -1,3 +1,4 @@
+use crate::common::UdsChannelError;
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -17,6 +18,10 @@ pub enum SttError {
     #[error("Audio file not found: {0}")]
     #[diagnostic(help("Check that the file path is correct and the file exists"))]
     AudioFileNotFound(String),
+
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Channel(#[from] UdsChannelError),
 }
 
 impl From<tonic::Status> for SttError {
