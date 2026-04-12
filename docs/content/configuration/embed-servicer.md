@@ -1,4 +1,4 @@
-# Embeddings Service
+# Embeddings Service Configuration Reference
 
 The Embeddings service provides a gRPC API for generating text vector embeddings powered
 by [Voyage AI](https://www.voyageai.com/). It runs alongside the STT service within the same gRPC server process and

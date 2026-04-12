@@ -1,4 +1,4 @@
-# Configuration Reference
+# STT Service Configuration Reference
 
 The Whisper STT service is configured via a `config.toml` file. Every value can be overridden at runtime with an
 environment variable following the pattern:
@@ -56,10 +56,8 @@ untrusted networks.
 | `error` | Only errors.                                                                                                               |
 
 :::tip
-
 When using a Unix domain socket, the socket path must be accessible to both the gRPC server process and any client
 connecting to it. When running in a container, mount the socket directory as a shared volume.
-
 :::
 
 ## `[model]`
@@ -86,10 +84,8 @@ models.
 | `large-v3` | 1550M      | 1x             | ~2.7%       | ~10 GB         | Best accuracy. **Recommended when hardware allows.** |
 
 :::note
-
 Word Error Rate (WER) figures are approximate and vary by language, audio quality, and domain. These are based on
 OpenAI's published benchmarks on English test sets.
-
 :::
 
 ### `device` values
@@ -101,11 +97,9 @@ OpenAI's published benchmarks on English test sets.
 | `cpu`  | Force CPU inference. Works on all platforms. Pair with `compute_type = "int8"` for best CPU performance.                                                                                                                       |
 
 :::warning
-
 CTranslate2 (the engine behind faster-whisper) does **not** support Apple MPS. On macOS with Apple Silicon, the model
 runs on CPU using optimized ARM NEON instructions. Setting `device = "cuda"` on a machine without a compatible GPU will
 cause a startup error.
-
 :::
 
 ### `compute_type` values
@@ -138,9 +132,7 @@ export WHISPER_MODEL_HF_TOKEN="hf_abc123..."
 ```
 
 :::danger
-
 Never commit your `hf_token` to version control. Use environment variables or a secrets manager in production.
-
 :::
 
 ## `[inference]`
@@ -225,10 +217,8 @@ by [pyannote.audio](https://github.com/pyannote/pyannote-audio). When enabled, t
 | `max_speakers` | `integer` | `0`                                | Default maximum number of expected speakers. Can be overridden per-request via `TranscribeOptions.num_speakers`.                                             |
 
 :::note Authentication
-
 The diarization pipeline uses the `hf_token` from the `[model]` section for authenticating with Hugging Face. There is
 no separate token for diarization. See the [`[model]` hf_token setup](#hf_token-setup) section for details.
-
 :::
 
 ### `device` values
@@ -240,7 +230,6 @@ no separate token for diarization. See the [`[model]` hf_token setup](#hf_token-
 | `cpu`  | Force CPU inference. Useful for offloading diarization to CPU when the GPU is reserved for Whisper.                                                          |
 
 :::note Apple Silicon
-
 On Apple Silicon (M1/M2/M3/M4), both CTranslate2 (Whisper) and the diarization device resolution are limited to `cpu`
 and `cuda`. The current device resolution logic does not support `mps`. Both pipelines will run on CPU using optimized
 ARM NEON/INT8 instructions:
@@ -267,32 +256,12 @@ These serve as **defaults** — they can be overridden per-request via the `num_
 When `num_speakers` is set in a request, it is used for both `min_speakers` and `max_speakers`.
 
 :::note Diarization and streaming
-
 When diarization is enabled for a request, transcript segments are **collected before being returned** (rather than
 streamed incrementally). This is because speaker labels are assigned by computing temporal overlap between Whisper
 segments and pyannote speaker turns — which requires all segments to be available.
 
 This adds latency proportional to the audio duration. For real-time streaming without speaker labels, send requests with
 `diarization = false`.
-
-:::
-
-## `[embeddings]`
-
-Configuration for the text embeddings provider used by the Embedding service.
-
-| Property  | Type     | Default | Description                                                                                      |
-|-----------|----------|---------|--------------------------------------------------------------------------------------------------|
-| `api_key` | `string` | `""`    | API key for the embeddings provider (Voyage AI). Required for the Embedding service to function. |
-
-:::danger
-
-Never commit your `api_key` to version control. Use environment variables or a secrets manager in production.
-
-```bash
-export WHISPER_EMBEDDINGS_API_KEY="your-api-key-here"
-```
-
 :::
 
 ## Environment Variable Reference
@@ -301,7 +270,7 @@ All settings support environment variable overrides. The variable name follows t
 uppercase.
 
 | Environment Variable                            | Config Equivalent                         | Type      |
-|-------------------------------------------------|-------------------------------------------|-----------| 
+|-------------------------------------------------|-------------------------------------------|-----------|
 | `WHISPER_SERVICE_ADDRESS`                       | `[service] address`                       | `string`  |
 | `WHISPER_SERVICE_LOG_LEVEL`                     | `[service] log_level`                     | `string`  |
 | `WHISPER_SERVICE_MAX_AUDIO_SIZE_MB`             | `[service] max_audio_size_mb`             | `integer` |
@@ -326,7 +295,6 @@ uppercase.
 | `WHISPER_DIARIZATION_DEVICE`                    | `[diarization] device`                    | `string`  |
 | `WHISPER_DIARIZATION_MIN_SPEAKERS`              | `[diarization] min_speakers`              | `integer` |
 | `WHISPER_DIARIZATION_MAX_SPEAKERS`              | `[diarization] max_speakers`              | `integer` |
-| `WHISPER_EMBEDDINGS_API_KEY`                    | `[embeddings] api_key`                    | `string`  |
 
 **Type casting rules:**
 

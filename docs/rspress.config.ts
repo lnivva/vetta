@@ -87,6 +87,7 @@ export default defineConfig({
                     items: [
                         {text: "Overview", link: "/configuration/"},
                         {text: "STT Service", link: "/configuration/stt-service"},
+                        {text: "Embeddings Service", link: "/configuration/embed-servicer"},
                     ],
                 },
             ],
