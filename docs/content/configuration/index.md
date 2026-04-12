@@ -11,6 +11,15 @@ conventions:
 
 ## Services
 
-| Service                                   | Config File   | Env Prefix | Language | Description                                                    |
-|-------------------------------------------|---------------|------------|----------|----------------------------------------------------------------|
-| [STT Service](/configuration/stt-service) | `config.toml` | `WHISPER_` | Python   | Speech-to-text transcription with optional speaker diarization |
+| Service                                                 | Config File   | Env Prefix | Language | Description                                                    |
+|---------------------------------------------------------|---------------|------------|----------|----------------------------------------------------------------|
+| [STT Service](/configuration/stt-service)               | `config.toml` | `WHISPER_` | Python   | Speech-to-text transcription with optional speaker diarization |
+| [Embeddings Service](/configuration/embeddings-service) | `config.toml` | `WHISPER_` | Python   | Text vector embeddings via Voyage AI                           |
+
+:::note Shared process
+
+The STT Service and Embeddings Service currently run within the same gRPC server process and share a single
+`config.toml` file. They are documented separately because they serve distinct functions and can be configured
+independently.
+
+:::
