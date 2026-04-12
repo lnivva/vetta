@@ -166,7 +166,6 @@ class TranscriptionEngine:
                     current_words, current_speaker or "", segment.avg_logprob
                 )
 
-
     @staticmethod
     def _build_chunk(segment, speaker_id: str) -> TranscriptChunkResult:
         words = [
