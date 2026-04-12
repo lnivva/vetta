@@ -10,7 +10,7 @@ pub struct UdsChannel {
     socket_path: PathBuf,
 }
 
-const DUMMY_ENDPOINT: &'static str = "http://[::]:50051";
+const DUMMY_ENDPOINT: &str = "http://[::]:50051";
 
 impl UdsChannel {
     pub fn new(socket: impl AsRef<Path>) -> Result<Self, UdsChannelError> {
