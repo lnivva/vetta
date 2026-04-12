@@ -1,6 +1,6 @@
 import logging
 from concurrent.futures import ThreadPoolExecutor, Future
-from typing import Optional, Iterator
+from typing import Any, Optional, Iterator
 
 from faster_whisper import WhisperModel
 
@@ -50,7 +50,7 @@ class TranscriptionEngine:
         )
 
         self._diarization_config = s.diarization
-        self.diarizer = None
+        self.diarizer: Any = None
 
         # Executor dedicated to running the Pyannote pipeline in the background
         self._executor = ThreadPoolExecutor(max_workers=2)
@@ -77,7 +77,7 @@ class TranscriptionEngine:
             diarization_pipeline, _ = _load_diarization()
             self.diarizer = diarization_pipeline(self._diarization_config)
 
-        # ── Preprocess ────────────────────────────────
+            # ── Preprocess ────────────────────────────────
         whisper_input, diar_input = self._preprocessor.prepare(
             audio_data,
             diarize=diarize,
@@ -86,6 +86,9 @@ class TranscriptionEngine:
         # ── Phase 1: Background Diarization ───────────
         diarization_future: Optional[Future] = None
         if diarize and diar_input is not None:
+            assert self.diarizer is not None, (
+                "Diarizer must be initialized when diarize=True"
+            )
             # Dispatch Pyannote to run independently in a separate thread
             diarization_future = self._executor.submit(
                 self.diarizer.run,
@@ -94,7 +97,7 @@ class TranscriptionEngine:
                 max_speakers=num_speakers,
             )
 
-        # ── Phase 2: Whisper ──────────────────────────
+            # ── Phase 2: Whisper ──────────────────────────
         # Whisper runs in the main thread concurrently with diarization
         use_word_timestamps = inf.word_timestamps or diarize
         segments, info = self.model.transcribe(
@@ -128,12 +131,12 @@ class TranscriptionEngine:
                 yield self._build_chunk(segment, speaker)
                 continue
 
-            # Complex path: Split the Whisper segment by word-level speaker boundaries
+                # Complex path: Split the Whisper segment by word-level speaker boundaries
             segment_dominant_speaker = diarization.speaker_at(
                 segment.start, segment.end
             )
-            current_speaker = None
-            current_words = []
+            current_speaker: Optional[str] = None
+            current_words: list[Any] = []
 
             for w in segment.words:
                 word_speaker = (
@@ -146,24 +149,24 @@ class TranscriptionEngine:
                 if current_speaker is None:
                     current_speaker = word_speaker
 
-                # If the speaker changes mid-segment, yield the accumulated words
+                    # If the speaker changes mid-segment, yield the accumulated words
                 if word_speaker != current_speaker:
                     if current_words:
                         yield self._build_words_chunk(
-                            current_words, current_speaker, segment.avg_logprob
+                            current_words, current_speaker or "", segment.avg_logprob
                         )
                     current_speaker = word_speaker
                     current_words = [w]
                 else:
                     current_words.append(w)
 
-            # Yield any remaining words in the segment
+                    # Yield any remaining words in the segment
             if current_words:
                 yield self._build_words_chunk(
-                    current_words, current_speaker, segment.avg_logprob
+                    current_words, current_speaker or "", segment.avg_logprob
                 )
 
-    # ── Internal Helpers ──────────────────────────────
+                # ── Internal Helpers ──────────────────────────────
 
     @staticmethod
     def _build_chunk(segment, speaker_id: str) -> TranscriptChunkResult:

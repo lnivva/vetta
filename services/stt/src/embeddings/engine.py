@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional
+from typing import List, Optional, cast
 
 import voyageai
 
@@ -45,27 +45,32 @@ class EmbeddingsEngine:
         logger.debug(f"Generating embeddings for {len(inputs)} items using {model}")
 
         try:
-            kwargs = {
-                "texts": inputs,
-                "model": model,
-                "input_type": input_type,
-                "truncation": truncate,
-            }
             if output_dimension is not None:
-                kwargs["output_dimension"] = output_dimension
-
-            result = self.client.embed(**kwargs)
+                result = self.client.embed(
+                    texts=inputs,
+                    model=model,
+                    input_type=input_type,
+                    truncation=truncate,
+                    output_dimension=output_dimension,
+                )
+            else:
+                result = self.client.embed(
+                    texts=inputs,
+                    model=model,
+                    input_type=input_type,
+                    truncation=truncate,
+                )
 
         except Exception as e:
             logger.exception("Voyage AI embedding request failed.")
             raise EmbeddingsError(f"Failed to fetch embeddings: {str(e)}") from e
 
-        domain_embeddings = [
-            DomainEmbedding(vector=vec, index=i)
+        domain_embeddings: list[DomainEmbedding] = [
+            DomainEmbedding(vector=cast(list[float], vec), index=i)
             for i, vec in enumerate(result.embeddings)
         ]
 
-        tokens_used = getattr(result, "total_tokens", 0)
+        tokens_used: int = getattr(result, "total_tokens", 0)
 
         return DomainEmbeddingResponse(
             model=model,
