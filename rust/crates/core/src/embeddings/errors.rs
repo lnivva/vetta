@@ -15,6 +15,15 @@ pub enum EmbeddingError {
     #[diagnostic(help("Start the vetta daemon or check the socket path in config.toml"))]
     SocketNotFound(String),
 
+    #[error("Embedding response length mismatch: expected {expected}, got {got}")]
+    #[diagnostic(
+        code(vetta::embedding::length_mismatch),
+        help(
+            "The embedding service returned a different number of embeddings than the number of texts submitted. This may indicate a service bug or silent filtering."
+        )
+    )]
+    LengthMismatch { expected: usize, got: usize },
+
     #[error(transparent)]
     #[diagnostic(transparent)]
     Channel(#[from] UdsChannelError),

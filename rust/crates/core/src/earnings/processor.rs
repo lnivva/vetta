@@ -6,6 +6,7 @@ use tokio_stream::StreamExt;
 use crate::db::models::{MongoDocument, OptimizedChunk};
 use crate::db::{ChunkInput, Db, EarningsRepository, SegmentInput, StoreEarningsRequest};
 use crate::embeddings::domain::Embedder;
+use crate::embeddings::errors::EmbeddingError;
 use crate::stt::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, TranscribeOptions};
 
@@ -169,8 +170,6 @@ impl EarningsProcessor {
             segments: grouped_segments,
         })
     }
-
-    // ── Private helpers ──────────────────────────────────────
 
     async fn check_duplicate(
         &self,
@@ -478,6 +477,14 @@ impl EarningsProcessor {
                 .embed(model_version, texts, Some("document"), true)
                 .await?;
 
+            if response.embeddings.len() != batch.len() {
+                return Err(EmbeddingError::LengthMismatch {
+                    expected: batch.len(),
+                    got: response.embeddings.len(),
+                }
+                .into());
+            }
+
             if embedding_dimension == 0 && !response.embeddings.is_empty() {
                 embedding_dimension = response.embeddings[0].vector.len() as u32;
             }
@@ -498,10 +505,8 @@ impl EarningsProcessor {
         observer.on_event(&EarningsEvent::EmbeddingComplete { chunk_count });
         observer.on_event(&EarningsEvent::StoringEmbeddings { chunk_count });
 
-        // Update chunks
         repo.update_embeddings(updates, model_version).await?;
 
-        // Update the parent call document status and metadata
         repo.mark_call_processed(call_id, model_version, embedding_dimension)
             .await?;
 
