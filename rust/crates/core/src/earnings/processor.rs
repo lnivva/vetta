@@ -278,7 +278,17 @@ impl EarningsProcessor {
         let mut current_chunk: Option<OptimizedChunk> = None;
 
         for seg in &transcript.segments {
-            let seg_word_count = seg.words.len();
+            let trimmed_text = seg.text.trim();
+            if trimmed_text.is_empty() {
+                continue;
+            }
+
+            let has_word_timings = !seg.words.is_empty();
+            let seg_word_count = if has_word_timings {
+                seg.words.len()
+            } else {
+                trimmed_text.split_whitespace().count()
+            };
 
             if seg_word_count == 0 {
                 continue;
@@ -289,7 +299,7 @@ impl EarningsProcessor {
                     && (c.word_count as usize + seg_word_count) <= TARGET_WORD_COUNT
                 {
                     c.text.push(' ');
-                    c.text.push_str(seg.text.trim());
+                    c.text.push_str(trimmed_text);
                     c.end_time = seg.end_time;
                     c.word_count += seg_word_count as u32;
                     current_chunk = Some(c);
@@ -299,7 +309,7 @@ impl EarningsProcessor {
                 }
             }
 
-            if seg_word_count > TARGET_WORD_COUNT {
+            if has_word_timings && seg_word_count > TARGET_WORD_COUNT {
                 for chunk_words in seg.words.chunks(TARGET_WORD_COUNT) {
                     let text = chunk_words
                         .iter()
@@ -331,7 +341,7 @@ impl EarningsProcessor {
                     speaker_id: seg.speaker_id.clone(),
                     start_time: seg.start_time,
                     end_time: seg.end_time,
-                    text: seg.text.clone(),
+                    text: trimmed_text.to_string(),
                     word_count: seg_word_count as u32,
                     previous_text: None,
                     previous_speaker: None,
@@ -468,7 +478,7 @@ impl EarningsProcessor {
         let mut updates: Vec<(mongodb::bson::oid::ObjectId, Vec<f32>)> =
             Vec::with_capacity(chunks.len());
         let mut chunks_embedded = 0;
-        let mut embedding_dimension = 0u32;
+        let mut embedding_dimension: Option<usize> = None;
 
         for batch in chunks.chunks(batch_size) {
             let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
@@ -486,14 +496,32 @@ impl EarningsProcessor {
                 .into());
             }
 
-            if embedding_dimension == 0 && !response.embeddings.is_empty() {
-                embedding_dimension = response.embeddings[0].vector.len() as u32;
-            }
-
             for (i, embedding) in response.embeddings.into_iter().enumerate() {
-                if let Some(chunk_id) = batch[i].id {
-                    updates.push((chunk_id, embedding.vector));
+                // Validate vector dimensionality is consistent across all embeddings.
+                let dim = embedding.vector.len();
+                match embedding_dimension {
+                    None => {
+                        embedding_dimension = Some(dim);
+                    }
+                    Some(expected_dim) if dim != expected_dim => {
+                        return Err(EmbeddingError::DimensionMismatch {
+                            expected: expected_dim,
+                            got: dim,
+                        }
+                        .into());
+                    }
+                    _ => {}
                 }
+
+                let chunk_id = batch[i].id.ok_or_else(|| {
+                    EarningsError::Internal(format!(
+                        "chunk at index {} for call {} has no _id",
+                        chunks_embedded as usize + i,
+                        call_id,
+                    ))
+                })?;
+
+                updates.push((chunk_id, embedding.vector));
             }
 
             chunks_embedded += batch.len() as u32;
@@ -503,12 +531,14 @@ impl EarningsProcessor {
             });
         }
 
+        let final_dimension = embedding_dimension.unwrap_or(0) as u32;
+
         observer.on_event(&EarningsEvent::EmbeddingComplete { chunk_count });
         observer.on_event(&EarningsEvent::StoringEmbeddings { chunk_count });
 
         repo.update_embeddings(updates, model_version).await?;
 
-        repo.mark_call_processed(call_id, model_version, embedding_dimension)
+        repo.mark_call_processed(call_id, model_version, final_dimension)
             .await?;
 
         observer.on_event(&EarningsEvent::EmbeddingsStored { chunk_count });

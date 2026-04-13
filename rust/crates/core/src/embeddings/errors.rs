@@ -24,6 +24,15 @@ pub enum EmbeddingError {
     )]
     LengthMismatch { expected: usize, got: usize },
 
+    #[error("Embedding dimension mismatch: established dimension {expected}, but got {got}")]
+    #[diagnostic(
+        code(vetta::embedding::dimension_mismatch),
+        help(
+            "All embedding vectors for a single call must have the same dimensionality. A vector was returned with a different length than the first vector in the batch set. This may indicate a model configuration issue or a service bug."
+        )
+    )]
+    DimensionMismatch { expected: usize, got: usize },
+
     #[error(transparent)]
     #[diagnostic(transparent)]
     Channel(#[from] UdsChannelError),

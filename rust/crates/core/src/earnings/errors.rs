@@ -84,6 +84,9 @@ pub enum EarningsError {
     #[error(transparent)]
     #[diagnostic(transparent)]
     Embedding(#[from] EmbeddingError),
+
+    #[error("Internal error: {0}")]
+    Internal(String),
 }
 
 impl From<DbError> for EarningsError {
