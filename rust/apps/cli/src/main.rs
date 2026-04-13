@@ -15,10 +15,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let env_path = match load_env_vars() {
-        Ok(value) => value,
-        Err(value) => return value,
-    };
+    let env_path = load_env_vars()?;
 
     let cli = cli::Cli::parse();
 
@@ -48,7 +45,7 @@ async fn main() -> Result<()> {
     commands::dispatch(cli.command, &ctx).await
 }
 
-fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
+fn load_env_vars() -> Result<Option<PathBuf>> {
     let env_path = match dotenvy::dotenv() {
         Ok(path) => {
             debug!("Loaded environment variables from {}", path.display());
@@ -59,9 +56,7 @@ fn load_env_vars() -> Result<Option<PathBuf>, Result<()>> {
             None
         }
         Err(e) => {
-            return Err(Err(e)
-                .into_diagnostic()
-                .wrap_err("Failed to load .env file"));
+            return Err(miette::miette!("Failed to load .env file: {}", e));
         }
     };
     Ok(env_path)

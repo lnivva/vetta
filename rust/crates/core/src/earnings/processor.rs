@@ -483,7 +483,7 @@ impl EarningsProcessor {
                     expected: batch.len(),
                     got: response.embeddings.len(),
                 }
-                    .into());
+                .into());
             }
 
             if embedding_dimension == 0 && !response.embeddings.is_empty() {

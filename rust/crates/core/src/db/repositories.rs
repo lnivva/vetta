@@ -405,7 +405,8 @@ impl EarningsRepository {
     ) -> Result<(), DbError> {
         let now = DateTime::now();
 
-        self.calls
+        let result = self
+            .calls
             .update_one(
                 doc! { "_id": call_id },
                 doc! {
@@ -418,6 +419,13 @@ impl EarningsRepository {
                 },
             )
             .await?;
+
+        if result.matched_count == 0 {
+            return Err(DbError::NotFound(format!(
+                "Call {} not found when marking as processed",
+                call_id
+            )));
+        }
 
         Ok(())
     }

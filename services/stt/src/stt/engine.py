@@ -58,12 +58,12 @@ class TranscriptionEngine:
         self._executor = ThreadPoolExecutor(max_workers=2)
 
     def transcribe(
-        self,
-        audio_data: bytes,
-        diarize: bool = False,
-        num_speakers: int = 0,
-        language: Optional[str] = None,
-        initial_prompt: Optional[str] = None,
+            self,
+            audio_data: bytes,
+            diarize: bool = False,
+            num_speakers: int = 0,
+            language: Optional[str] = None,
+            initial_prompt: Optional[str] = None,
     ) -> Iterator[TranscriptChunkResult]:
         """
         Executes the STT pipeline.
@@ -149,10 +149,10 @@ class TranscriptionEngine:
 
             for w in segment.words:
                 word_speaker = (
-                    diarization.speaker_at(w.start, w.end)
-                    or current_speaker
-                    or segment_dominant_speaker
-                    or ""
+                        diarization.speaker_at(w.start, w.end)
+                        or current_speaker
+                        or segment_dominant_speaker
+                        or ""
                 )
 
                 if current_speaker is None:
@@ -196,8 +196,11 @@ class TranscriptionEngine:
 
     @staticmethod
     def _build_words_chunk(
-        words: list, speaker_id: str, confidence: float
+            words: list, speaker_id: str, confidence: float
     ) -> TranscriptChunkResult:
+        if not words:
+            raise ValueError("Cannot build chunk from empty words list")
+
         word_segments = [
             WordSegment(
                 start_time=w.start,
