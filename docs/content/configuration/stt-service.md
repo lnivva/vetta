@@ -231,7 +231,7 @@ no separate token for diarization. See the [`[model]` hf_token setup](#hf_token-
 
 :::note Apple Silicon
 On Apple Silicon (M1/M2/M3/M4), both CTranslate2 (Whisper) and the diarization device resolution are limited to `cpu`
-and `cuda`. The current device resolution logic does not support `mps`. Both pipelines will run on CPU using optimized
+and `cuda`. The current device resolution logic does not support `mps`. Whisper pipeline will run on CPU using optimized
 ARM NEON/INT8 instructions:
 
 ```toml
