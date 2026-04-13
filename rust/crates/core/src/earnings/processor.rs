@@ -304,7 +304,8 @@ impl EarningsProcessor {
                     let text = chunk_words
                         .iter()
                         .map(|w| w.text.as_str())
-                        .collect::<String>()
+                        .collect::<Vec<_>>()
+                        .join(" ")
                         .trim()
                         .to_string();
 
@@ -482,7 +483,7 @@ impl EarningsProcessor {
                     expected: batch.len(),
                     got: response.embeddings.len(),
                 }
-                .into());
+                    .into());
             }
 
             if embedding_dimension == 0 && !response.embeddings.is_empty() {

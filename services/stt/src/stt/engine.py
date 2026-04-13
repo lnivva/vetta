@@ -118,14 +118,20 @@ class TranscriptionEngine:
         )
 
         # ── Phase 3: Wait & Merge ─────────────────────
+        diarization_timeout_seconds = 60 * 60
         diarization = None
         if diarization_future is not None:
-            # Synchronization Barrier: We must wait for Pyannote to finish
-            # analyzing the full file before we can assign speakers to the stream.
-            diarization = diarization_future.result()
+            try:
+                diarization = diarization_future.result(
+                    timeout=diarization_timeout_seconds
+                )
+            except TimeoutError:
+                logger.error(
+                    "Diarization timed out after %ds", diarization_timeout_seconds
+                )
+                diarization_future.cancel()
 
         for segment in segments:
-            # Fast path: No diarization, or no word-level timestamps to align
             if diarization is None or not segment.words:
                 speaker = (
                     diarization.speaker_at(segment.start, segment.end)
@@ -135,7 +141,6 @@ class TranscriptionEngine:
                 yield self._build_chunk(segment, speaker)
                 continue
 
-            # Complex path: Split the Whisper segment by word-level speaker boundaries
             segment_dominant_speaker = diarization.speaker_at(
                 segment.start, segment.end
             )
@@ -153,7 +158,6 @@ class TranscriptionEngine:
                 if current_speaker is None:
                     current_speaker = word_speaker
 
-                # If the speaker changes mid-segment, yield the accumulated words
                 if word_speaker != current_speaker:
                     if current_words:
                         yield self._build_words_chunk(
@@ -164,7 +168,6 @@ class TranscriptionEngine:
                 else:
                     current_words.append(w)
 
-            # Yield any remaining words in the segment
             if current_words:
                 yield self._build_words_chunk(
                     current_words, current_speaker or "", segment.avg_logprob
