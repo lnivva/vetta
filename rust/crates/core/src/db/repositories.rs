@@ -460,7 +460,6 @@ fn build_call_document(req: &StoreEarningsRequest, now: DateTime) -> EarningsCal
         },
         stats: TranscriptStats {
             segment_count: req.segments.len() as u32,
-            turn_count: req.chunks.len() as u32,
             speaker_count: speakers.len() as u32,
             word_count: req.chunks.iter().map(|c| c.word_count).sum(),
             chunk_count: req.chunks.len() as u32,

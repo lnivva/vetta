@@ -15,7 +15,7 @@ pub const ALLOWED_MIME_TYPES: [&str; 5] = [
 
 /// Validates that `path_str` points to a readable media file within the accepted size and format constraints.
 ///
-/// Returns a human-readable description such as `"audio/mpeg (12MB)"` on success.
+/// Returns a human-readable description such as `"audio/mpeg (12.0MB)"` on success.
 pub(crate) fn validate_media_file(path_str: &str) -> Result<String, IngestError> {
     let path = Path::new(path_str);
 
@@ -24,6 +24,10 @@ pub(crate) fn validate_media_file(path_str: &str) -> Result<String, IngestError>
     }
 
     let metadata = fs::metadata(path)?;
+
+    if !metadata.is_file() {
+        return Err(IngestError::NotAFile(path_str.to_string()));
+    }
 
     if metadata.len() == 0 {
         return Err(IngestError::FileEmpty);
@@ -47,11 +51,9 @@ pub(crate) fn validate_media_file(path_str: &str) -> Result<String, IngestError>
         return Err(IngestError::InvalidFormat(kind.mime_type().to_string()));
     }
 
-    let size_mb = size_bytes / (1024 * 1024);
-    Ok(format!("{} ({}MB)", kind.mime_type(), size_mb))
+    let size_mb = size_bytes as f64 / (1024.0 * 1024.0);
+    Ok(format!("{} ({:.1}MB)", kind.mime_type(), size_mb))
 }
-
-// ── Tests ────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -77,6 +79,14 @@ mod tests {
         let path_str = path.to_str().unwrap();
         let err = validate_media_file(path_str).unwrap_err();
         assert!(matches!(err, IngestError::FileNotFound(p) if p == path_str));
+    }
+
+    #[test]
+    fn directory_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path_str = dir.path().to_str().unwrap();
+        let err = validate_media_file(path_str).unwrap_err();
+        assert!(matches!(err, IngestError::NotAFile(p) if p == path_str));
     }
 
     #[test]
@@ -146,6 +156,18 @@ mod tests {
         assert!(
             msg.ends_with("MB)"),
             "expected message to end with 'MB)', got: {msg}"
+        );
+    }
+
+    #[test]
+    fn small_file_shows_fractional_size() {
+        let file = write_temp(b"ID3\x03\x00\x00\x00\x00\x00\x21some_payload");
+        let msg = validate_path(file.path()).unwrap();
+
+        // File is only a few bytes, so size should be 0.0MB, not 0MB
+        assert!(
+            msg.contains("0.0MB"),
+            "expected fractional size for small file, got: {msg}"
         );
     }
 }

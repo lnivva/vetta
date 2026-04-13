@@ -61,7 +61,14 @@ impl Embedder for LocalEmbeddingsStrategy {
             .collect();
 
         let (prompt_tokens, total_tokens) = match response.usage {
-            Some(usage) => (usage.prompt_tokens as u32, usage.total_tokens as u32),
+            Some(usage) if usage.prompt_tokens >= 0 && usage.total_tokens >= 0 => {
+                (usage.prompt_tokens as u32, usage.total_tokens as u32)
+            }
+            Some(_) => {
+                return Err(EmbeddingError::from(tonic::Status::internal(
+                    "embedding service returned negative token counts",
+                )));
+            }
             None => (0, 0),
         };
 

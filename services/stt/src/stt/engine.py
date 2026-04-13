@@ -1,4 +1,5 @@
 import logging
+import threading
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Any, Optional, Iterator
 
@@ -51,6 +52,7 @@ class TranscriptionEngine:
 
         self._diarization_config = s.diarization
         self.diarizer: Any = None
+        self._diarizer_lock = threading.Lock()
 
         # Executor dedicated to running the Pyannote pipeline in the background
         self._executor = ThreadPoolExecutor(max_workers=2)
@@ -74,8 +76,10 @@ class TranscriptionEngine:
             raise ValueError("Diarization requested but not enabled in config.")
 
         if diarize and self.diarizer is None:
-            diarization_pipeline, _ = _load_diarization()
-            self.diarizer = diarization_pipeline(self._diarization_config)
+            with self._diarizer_lock:
+                if self.diarizer is None:
+                    diarization_pipeline, _ = _load_diarization()
+                    self.diarizer = diarization_pipeline(self._diarization_config)
 
         # ── Preprocess ────────────────────────────────
         whisper_input, diar_input = self._preprocessor.prepare(

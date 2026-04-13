@@ -155,7 +155,6 @@ pub struct SourceMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptStats {
     pub segment_count: u32,
-    pub turn_count: u32,
     pub speaker_count: u32,
     pub word_count: u32,
     pub chunk_count: u32,

@@ -14,6 +14,15 @@ pub enum IngestError {
     )]
     FileNotFound(String),
 
+    #[error("Path is not a regular file: {0}")]
+    #[diagnostic(
+        code(vetta::ingest::not_a_file),
+        help(
+            "The path exists but points to a directory or other non-file resource. Please provide a path to an actual media file."
+        )
+    )]
+    NotAFile(String),
+
     #[error("File is empty (0 bytes)")]
     #[diagnostic(
         code(vetta::ingest::empty_file),

@@ -289,7 +289,8 @@ impl EarningsProcessor {
                 if c.speaker_id == seg.speaker_id
                     && (c.word_count as usize + seg_word_count) <= TARGET_WORD_COUNT
                 {
-                    c.text.push_str(&seg.text);
+                    c.text.push(' ');
+                    c.text.push_str(seg.text.trim());
                     c.end_time = seg.end_time;
                     c.word_count += seg_word_count as u32;
                     current_chunk = Some(c);

@@ -54,7 +54,6 @@ impl EarningsObserver for EarningsCliObserver {
 
     fn on_duplicate_overridden(&self, existing_call_id: &str) {
         if self.is_verbose() {
-            // Replaced manual console::style with our sleek warn_msg
             self.spinner.println(warn_msg(&format!(
                 "Replacing existing call {} {existing_call_id}",
                 Styles::dimmed().apply_to(ARROW)
@@ -149,16 +148,10 @@ impl EarningsObserver for EarningsCliObserver {
     }
 
     fn on_embedding_complete(&self, chunk_count: u32) {
-        if self.is_verbose() {
-            if chunk_count > 0 {
-                self.spinner.println(success_msg(&format!(
-                    "Embeddings generated ({chunk_count} chunks)"
-                )));
-            } else {
-                self.spinner.println(warn_msg(
-                    "Embedding generation skipped (not yet implemented)",
-                ));
-            }
+        if self.is_verbose() && chunk_count > 0 {
+            self.spinner.println(success_msg(&format!(
+                "Embeddings generated ({chunk_count} chunks)"
+            )));
         }
     }
 
@@ -168,15 +161,10 @@ impl EarningsObserver for EarningsCliObserver {
     }
 
     fn on_embeddings_stored(&self, chunk_count: u32) {
-        if self.is_verbose() {
-            if chunk_count > 0 {
-                self.spinner.println(success_msg(&format!(
-                    "Embeddings stored ({chunk_count} chunks)"
-                )));
-            } else {
-                self.spinner
-                    .println(warn_msg("Embedding storage skipped (not yet implemented)"));
-            }
+        if self.is_verbose() && chunk_count > 0 {
+            self.spinner.println(success_msg(&format!(
+                "Embeddings stored ({chunk_count} chunks)"
+            )));
         }
     }
 

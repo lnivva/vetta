@@ -15,6 +15,11 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let env_path = match load_env_vars() {
+        Ok(value) => value,
+        Err(value) => return value,
+    };
+
     let cli = cli::Cli::parse();
 
     let log_level = if cli.debug { "debug" } else { "error" };
@@ -28,11 +33,6 @@ async fn main() -> Result<()> {
         )
         .finish();
     tracing::subscriber::set_global_default(subscriber).into_diagnostic()?;
-
-    let env_path = match load_env_vars() {
-        Ok(value) => value,
-        Err(value) => return value,
-    };
 
     miette::set_panic_hook();
 
