@@ -94,7 +94,7 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
             println!("{json_out}");
         }
         CliOutputOptions::Plain => {
-            print_transcript(&transcript).expect("Unable to print transcript");
+            print_transcript(&transcript)?;
         }
     }
 
