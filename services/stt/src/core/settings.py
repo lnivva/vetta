@@ -4,7 +4,7 @@ import subprocess
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, overload
+from typing import Literal, overload, cast, get_args
 
 Device = Literal["cuda", "cpu"]
 ComputeType = Literal["float16", "int8_float16", "int8", "float32"]
@@ -12,20 +12,21 @@ ComputeType = Literal["float16", "int8_float16", "int8", "float32"]
 
 @dataclass
 class ServiceConfig:
-    address: str
+    socket_path: str
     log_level: str
     max_audio_size_mb: int
 
     @property
-    def is_unix_socket(self) -> bool:
-        return self.address.startswith("unix://")
+    def address(self) -> str:
+        """Always returns the gRPC-compatible URI scheme for Unix sockets."""
+        if self.socket_path.startswith("unix://"):
+            return self.socket_path
+        return f"unix://{self.socket_path}"
 
     @property
-    def socket_path(self) -> str | None:
-        """Return the filesystem path if this is a UDS address, else None."""
-        if self.is_unix_socket:
-            return self.address[len("unix://") :]
-        return None
+    def is_unix_socket(self) -> bool:
+        """Always True, as we strictly enforce local streams (UDS)."""
+        return True
 
 
 @dataclass
@@ -69,7 +70,7 @@ class DiarizationConfig:
 
 @dataclass
 class EmbeddingsConfig:
-    """Configuration for the text embeddings provider (Voyage AI)."""
+    """Configuration for the text embeddings provider."""
 
     api_key: str = field(repr=False)
 
@@ -181,7 +182,15 @@ def _resolve_compute_type(requested: str, device: Device) -> ComputeType:
         ComputeType: The resolved compute type.
     """
     if requested != "auto":
-        return requested  # type: ignore
+        allowed_types = get_args(ComputeType)
+
+        if requested not in allowed_types:
+            raise ValueError(
+                f"Invalid compute_type '{requested}' provided. "
+                f"Allowed values are 'auto' or one of {allowed_types}."
+            )
+
+        return cast(ComputeType, requested)
 
     if device == "cuda":
         try:
@@ -328,30 +337,19 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
 
     # --- Diarization device resolution ---
     dia_device_raw = _env("diarization", "device", str(dia.get("device", "auto")))
-    if dia_device_raw == "auto":
-        dia_device = device
-    else:
-        dia_device = _resolve_device(dia_device_raw)
+    dia_device = device if dia_device_raw == "auto" else _resolve_device(dia_device_raw)
 
-    raw_address = svc.get("address")
-    if raw_address is None and "socket_path" in svc:
-        raw_address = f"unix://{svc['socket_path']}"
-
-    legacy_socket_path = os.environ.get("WHISPER_SERVICE_SOCKET_PATH")
-    if "WHISPER_SERVICE_ADDRESS" in os.environ:
-        resolved_address = _env(
-            "service",
-            "address",
-            raw_address or "unix:///tmp/whisper.sock",
-        )
-    elif legacy_socket_path:
-        resolved_address = f"unix://{legacy_socket_path}"
-    else:
-        resolved_address = raw_address or "unix:///tmp/whisper.sock"
+    # --- Socket Path Strict Resolution ---
+    raw_socket = _env(
+        "service", "socket_path", str(svc.get("socket_path", "/tmp/whisper.sock"))
+    )
+    clean_socket_path = (
+        raw_socket[len("unix://") :] if raw_socket.startswith("unix://") else raw_socket
+    )
 
     settings = Settings(
         service=ServiceConfig(
-            address=resolved_address,
+            socket_path=clean_socket_path,
             log_level=_env("service", "log_level", str(svc.get("log_level", "info"))),
             max_audio_size_mb=_env(
                 "service", "max_audio_size_mb", int(svc.get("max_audio_size_mb", 100))
@@ -369,24 +367,24 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             hf_token=_env("model", "hf_token", str(mdl.get("hf_token", ""))),
         ),
         inference=InferenceConfig(
-            beam_size=_env("inference", "beam_size", int(inf.get("beam_size", 5))),
+            beam_size=_env("inference", "beam_size", int(inf.get("beam_size", 8))),
             vad_filter=_env(
                 "inference", "vad_filter", bool(inf.get("vad_filter", True))
             ),
             vad_min_silence_ms=_env(
                 "inference",
                 "vad_min_silence_ms",
-                int(inf.get("vad_min_silence_ms", 300)),
+                int(inf.get("vad_min_silence_ms", 1000)),
             ),
             no_speech_threshold=_env(
                 "inference",
                 "no_speech_threshold",
-                float(inf.get("no_speech_threshold", 0.6)),
+                float(inf.get("no_speech_threshold", 0.4)),
             ),
             log_prob_threshold=_env(
                 "inference",
                 "log_prob_threshold",
-                float(inf.get("log_prob_threshold", -0.5)),
+                float(inf.get("log_prob_threshold", -0.3)),
             ),
             compression_ratio_threshold=_env(
                 "inference",
@@ -441,8 +439,7 @@ def load_settings(config_path: str | Path = "config.toml") -> Settings:
             )
         except Exception as exc:
             print(
-                f"[config] Hugging Face login failed ({exc}); "
-                f"falling back to HF_TOKEN env var."
+                f"[config] Hugging Face login failed ({exc}); falling back to HF_TOKEN env var."
             )
 
     _print_summary(settings)
@@ -462,7 +459,7 @@ def _print_summary(s: Settings):
     )
     print(f"  CPU threads    : {s.concurrency.cpu_threads}")
     print(f"  Max workers    : {s.concurrency.max_workers}")
-    print(f"  Address        : {s.service.address}")
+    print(f"  Socket Path    : {s.service.socket_path}")
     print(f"  Max Audio Size : {s.service.max_audio_size_mb}MB")
     print(f"  Diarization    : {'enabled' if s.diarization.enabled else 'disabled'}")
     if s.diarization.enabled:

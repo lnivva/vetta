@@ -4,7 +4,11 @@ import grpc
 
 from src.generated.embeddings import embeddings_pb2_grpc, embeddings_pb2
 from src.core.settings import Settings
-from src.embeddings.engine import EmbeddingsEngine, EmbeddingsError
+from src.embeddings.engine import (
+    EmbeddingsEngine,
+    EmbeddingsError,
+    InputType as DomainInputType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,11 +31,6 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
         inputs = list(request.inputs)
         truncate = request.truncate
 
-        input_type = request.input_type if request.HasField("input_type") else None
-        output_dim = (
-            request.output_dimension if request.HasField("output_dimension") else None
-        )
-
         if not inputs:
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT, "Inputs list cannot be empty."
@@ -44,16 +43,30 @@ class EmbeddingServicer(embeddings_pb2_grpc.EmbeddingServiceServicer):
             )
             return None
 
+        if request.input_type == embeddings_pb2.INPUT_TYPE_DOCUMENT:
+            domain_input_type = DomainInputType.DOCUMENT
+        elif request.input_type == embeddings_pb2.INPUT_TYPE_QUERY:
+            domain_input_type = DomainInputType.QUERY
+        else:
+            context.abort(
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "input_type must be explicitly set to either DOCUMENT or QUERY.",
+            )
+            return None
+
+        output_dim = (
+            request.output_dimension if request.HasField("output_dimension") else None
+        )
+
         try:
             domain_response = self._engine.embed(
                 model=model,
                 inputs=inputs,
-                input_type=input_type,
+                input_type=domain_input_type,
                 truncate=truncate,
                 output_dimension=output_dim,
             )
 
-            # 4. Pack and Return Response
             return self._map_to_proto(domain_response)
 
         except ValueError as exc:

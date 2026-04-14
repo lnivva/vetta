@@ -1,4 +1,5 @@
 import logging
+from enum import Enum
 from typing import List, Optional, cast
 
 import voyageai
@@ -13,6 +14,13 @@ class EmbeddingsError(Exception):
     """Custom exception raised when the upstream provider fails."""
 
     pass
+
+
+class InputType(str, Enum):
+    """Strict domain constraints for Voyage AI input types."""
+
+    DOCUMENT = "document"
+    QUERY = "query"
 
 
 class EmbeddingsEngine:
@@ -35,7 +43,7 @@ class EmbeddingsEngine:
         self,
         model: str,
         inputs: List[str],
-        input_type: Optional[str] = None,
+        input_type: InputType,
         truncate: bool = True,
         output_dimension: Optional[int] = None,
     ) -> DomainEmbeddingResponse:
@@ -49,7 +57,7 @@ class EmbeddingsEngine:
                 result = self.client.embed(
                     texts=inputs,
                     model=model,
-                    input_type=input_type,
+                    input_type=input_type.value,
                     truncation=truncate,
                     output_dimension=output_dimension,
                 )
@@ -57,7 +65,7 @@ class EmbeddingsEngine:
                 result = self.client.embed(
                     texts=inputs,
                     model=model,
-                    input_type=input_type,
+                    input_type=input_type.value,
                     truncation=truncate,
                 )
 
@@ -65,8 +73,8 @@ class EmbeddingsEngine:
             logger.exception("Voyage AI embedding request failed.")
             raise EmbeddingsError(f"Failed to fetch embeddings: {str(e)}") from e
 
-        domain_embeddings: list[DomainEmbedding] = [
-            DomainEmbedding(vector=cast(list[float], vec), index=i)
+        domain_embeddings: List[DomainEmbedding] = [
+            DomainEmbedding(vector=cast(List[float], vec), index=i)
             for i, vec in enumerate(result.embeddings)
         ]
 

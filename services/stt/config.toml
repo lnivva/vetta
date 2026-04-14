@@ -1,5 +1,5 @@
 [service]
-address = "unix:///tmp/whisper.sock" # 0.0.0.0:50051
+socket_path = "/tmp/whisper.sock"
 log_level = "info"
 max_audio_size_mb = 100
 
@@ -11,7 +11,7 @@ compute_type = "int8"
 hf_token = ""
 
 [inference]
-beam_size = 5
+beam_size = 8
 vad_filter = true
 vad_min_silence_ms = 1000
 no_speech_threshold = 0.4
