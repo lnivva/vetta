@@ -1,10 +1,12 @@
-use crate::cli::CliOutputOptions;
+use crate::cli::CliOutputFormat;
+use crate::config::VettaConfig;
 use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct AppContext {
-    pub socket: PathBuf,
-    pub verbose: bool,
+    pub config: VettaConfig,
     pub debug: bool,
-    pub output: CliOutputOptions,
+    pub format: CliOutputFormat,
+    pub input: Option<PathBuf>,
+    pub output: Option<PathBuf>,
 }

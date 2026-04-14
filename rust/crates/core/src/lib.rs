@@ -2,8 +2,9 @@ mod common;
 pub mod db;
 mod embeddings;
 pub mod stt;
+mod vector_search;
 
-pub use embeddings::{Embedder, EmbeddingError, LocalEmbeddingsStrategy};
+pub use embeddings::{Embedder, EmbeddingError, InputType, LocalEmbeddingsStrategy};
 
 pub mod earnings {
     //! Public API for the earnings pipeline.
@@ -20,3 +21,5 @@ pub mod earnings {
     pub use events::{EarningsEvent, EarningsObserver, NullObserver};
     pub use processor::{EarningsProcessor, ProcessEarningsCallRequest};
 }
+
+pub use vector_search::{SearchFilters, VectorSearchResult, build_searcher};

@@ -5,7 +5,7 @@ use tokio_stream::StreamExt;
 
 use crate::db::models::{MongoDocument, OptimizedChunk};
 use crate::db::{ChunkInput, Db, EarningsRepository, SegmentInput, StoreEarningsRequest};
-use crate::embeddings::domain::Embedder;
+use crate::embeddings::domain::{Embedder, InputType};
 use crate::embeddings::errors::EmbeddingError;
 use crate::stt::domain::{Quarter, Transcript, TranscriptSegment};
 use crate::stt::{Stt, TranscribeOptions};
@@ -485,7 +485,7 @@ impl EarningsProcessor {
 
             let response = self
                 .embedder
-                .embed(model_version, texts, Some("document"), true)
+                .embed(model_version, texts, InputType::Document, true)
                 .await?;
 
             if response.embeddings.len() != batch.len() {

@@ -1,9 +1,11 @@
 mod cli;
 mod commands;
+mod config;
 mod context;
 mod infra;
 mod ui;
 
+use crate::config::VettaConfig;
 use clap::Parser;
 use context::AppContext;
 use miette::{IntoDiagnostic, Result, WrapErr, bail};
@@ -17,6 +19,7 @@ use tracing_subscriber::{EnvFilter, FmtSubscriber};
 async fn main() -> Result<()> {
     let env_path = load_env_vars()?;
 
+    let persistent_config = VettaConfig::load();
     let cli = cli::Cli::parse();
 
     let log_level = if cli.debug { "debug" } else { "error" };
@@ -34,9 +37,10 @@ async fn main() -> Result<()> {
     miette::set_panic_hook();
 
     let ctx = AppContext {
-        socket: cli.socket,
-        verbose: cli.verbose,
+        config: persistent_config,
         debug: cli.debug,
+        format: cli.format,
+        input: cli.input,
         output: cli.output,
     };
 

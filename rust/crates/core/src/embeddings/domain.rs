@@ -1,6 +1,29 @@
 use async_trait::async_trait;
+use fmt::Display;
+use std::fmt;
 
 use super::errors::EmbeddingError;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InputType {
+    Document,
+    Query,
+}
+
+impl InputType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InputType::Document => "document",
+            InputType::Query => "query",
+        }
+    }
+}
+
+impl Display for InputType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct DomainEmbedding {
@@ -18,12 +41,11 @@ pub struct DomainEmbeddingResponse {
 
 #[async_trait]
 pub trait Embedder: Send + Sync {
-    /// Takes raw text inputs and returns domain embedding objects.
     async fn embed(
         &self,
         model: &str,
         inputs: Vec<String>,
-        input_type: Option<&str>,
+        input_type: InputType,
         truncate: bool,
     ) -> Result<DomainEmbeddingResponse, EmbeddingError>;
 }

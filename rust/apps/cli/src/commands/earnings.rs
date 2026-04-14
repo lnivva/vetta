@@ -1,19 +1,22 @@
-use clap::{Subcommand, ValueEnum};
+use clap::{Args, Subcommand, ValueEnum};
 use miette::{IntoDiagnostic, Result};
+use std::io::Write;
 use std::path::PathBuf;
 
 use crate::{
-    cli::CliOutputOptions,
+    cli::{CliOutputFormat, PayloadDriven},
     context::AppContext,
     infra::factory,
     ui::earnings::{EarningsCliObserver, print_transcript},
 };
 
+use crate::ui::get_writer;
 use vetta_core::db::{Db, DbConfig};
 use vetta_core::earnings::{EarningsProcessor, ProcessEarningsCallRequest};
 use vetta_core::stt::domain::Quarter as CoreQuarter;
 
-#[derive(Debug, Clone, ValueEnum)]
+#[derive(Debug, Clone, ValueEnum, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum CliQuarter {
     Q1,
     Q2,
@@ -32,36 +35,81 @@ impl From<CliQuarter> for CoreQuarter {
     }
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct ProcessArgs {
+    #[arg(short, long)]
+    pub file: Option<PathBuf>,
+    #[arg(short, long)]
+    pub ticker: Option<String>,
+    #[arg(short, long)]
+    pub year: Option<u16>,
+    #[arg(short, long, value_enum)]
+    pub quarter: Option<CliQuarter>,
+    #[arg(long)]
+    pub replace: bool,
+    #[arg(short, long)]
+    pub verbose: bool,
+}
+
 #[derive(Subcommand)]
 pub enum EarningsAction {
-    Process {
-        #[arg(short, long)]
-        file: PathBuf,
+    Process(ProcessArgs),
+}
 
-        #[arg(short, long)]
-        ticker: String,
+#[derive(Debug, serde::Deserialize)]
+pub struct ProcessPayload {
+    pub file: PathBuf,
+    pub ticker: String,
+    pub year: u16,
+    pub quarter: CliQuarter,
+    #[serde(default)]
+    pub replace: bool,
+}
 
-        #[arg(short, long)]
-        year: u16,
+impl PayloadDriven for ProcessPayload {
+    type CliArgs = ProcessArgs;
 
-        #[arg(short, long, value_enum)]
-        quarter: CliQuarter,
+    fn from_cli(args: &Self::CliArgs) -> Option<Self> {
+        if let (Some(f), Some(t), Some(y), Some(q)) =
+            (&args.file, &args.ticker, &args.year, &args.quarter)
+        {
+            Some(Self {
+                file: f.clone(),
+                ticker: t.clone(),
+                year: *y,
+                quarter: q.clone(),
+                replace: args.replace,
+            })
+        } else {
+            None
+        }
+    }
 
-        #[arg(long, default_value = "false")]
-        replace: bool,
-    },
+    fn merge_cli(&mut self, args: &Self::CliArgs) {
+        if let Some(f) = &args.file {
+            self.file = f.clone();
+        }
+        if let Some(t) = &args.ticker {
+            self.ticker = t.clone();
+        }
+        if let Some(y) = args.year {
+            self.year = y;
+        }
+        if let Some(q) = &args.quarter {
+            self.quarter = q.clone();
+        }
+        if args.replace {
+            self.replace = true;
+        }
+    }
 }
 
 pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
-    let EarningsAction::Process {
-        file,
-        ticker,
-        year,
-        quarter,
-        replace,
-    } = action;
+    let EarningsAction::Process(args) = action;
 
-    let file = std::fs::canonicalize(&file).into_diagnostic()?;
+    let payload = ProcessPayload::resolve(ctx, &args)?;
+
+    let file_path = std::fs::canonicalize(&payload.file).into_diagnostic()?;
 
     let db_config = DbConfig::from_env().into_diagnostic()?;
     let db = Db::connect(&db_config).await.into_diagnostic()?;
@@ -71,16 +119,16 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
 
     let processor = EarningsProcessor::new(stt, embedder, db);
 
-    let observer = EarningsCliObserver::new(ctx.output, ctx.verbose);
+    let observer = EarningsCliObserver::new(ctx.format, args.verbose);
 
     let request = ProcessEarningsCallRequest {
-        file_path: file.to_string_lossy().into(),
-        ticker,
-        year,
-        quarter: quarter.into(),
+        file_path: file_path.to_string_lossy().into(),
+        ticker: payload.ticker,
+        year: payload.year,
+        quarter: payload.quarter.into(),
         language: Some("en".into()),
         initial_prompt: Some("Earnings call transcript".into()),
-        replace,
+        replace: payload.replace,
     };
 
     let transcript = processor
@@ -88,13 +136,16 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
         .await
         .into_diagnostic()?;
 
-    match ctx.output {
-        CliOutputOptions::Json => {
+    let mut writer = get_writer(&ctx.output)?;
+
+    match ctx.format {
+        CliOutputFormat::Json => {
             let json_out = serde_json::to_string_pretty(&transcript).into_diagnostic()?;
-            println!("{json_out}");
+            writer.write_all(json_out.as_bytes()).into_diagnostic()?;
+            writer.write_all(b"\n").into_diagnostic()?;
         }
-        CliOutputOptions::Plain => {
-            print_transcript(&transcript)?;
+        CliOutputFormat::Plain => {
+            print_transcript(&transcript, &mut writer)?;
         }
     }
 

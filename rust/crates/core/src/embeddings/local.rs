@@ -1,4 +1,4 @@
-use super::domain::{DomainEmbedding, DomainEmbeddingResponse, Embedder};
+use super::domain::{DomainEmbedding, DomainEmbeddingResponse, Embedder, InputType};
 use super::errors::EmbeddingError;
 use crate::common::UdsChannel;
 use async_trait::async_trait;
@@ -35,15 +35,20 @@ impl Embedder for LocalEmbeddingsStrategy {
         &self,
         model: &str,
         inputs: Vec<String>,
-        input_type: Option<&str>,
+        input_type: InputType,
         truncate: bool,
     ) -> Result<DomainEmbeddingResponse, EmbeddingError> {
         let mut client = self.client().await?;
 
+        let proto_input_type = match input_type {
+            InputType::Document => pb::InputType::Document as i32,
+            InputType::Query => pb::InputType::Query as i32,
+        };
+
         let request = tonic::Request::new(EmbeddingRequest {
             model: model.to_string(),
             inputs,
-            input_type: input_type.map(|s| s.to_string()),
+            input_type: proto_input_type,
             truncate,
             output_dimension: None,
             extra_params: None,

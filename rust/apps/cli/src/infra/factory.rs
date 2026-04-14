@@ -4,7 +4,7 @@ use vetta_core::stt::{LocalSttStrategy, Stt};
 use vetta_core::{Embedder, LocalEmbeddingsStrategy};
 
 pub async fn build_stt(ctx: &AppContext) -> Result<Box<dyn Stt>> {
-    let stt = LocalSttStrategy::connect(&ctx.socket)
+    let stt = LocalSttStrategy::connect(&ctx.config.ai_grpc_service_socket_path)
         .await
         .into_diagnostic()?;
 
@@ -12,7 +12,7 @@ pub async fn build_stt(ctx: &AppContext) -> Result<Box<dyn Stt>> {
 }
 
 pub async fn build_embedder(ctx: &AppContext) -> Result<Box<dyn Embedder>> {
-    let embedder = LocalEmbeddingsStrategy::connect(&ctx.socket)
+    let embedder = LocalEmbeddingsStrategy::connect(&ctx.config.ai_grpc_service_socket_path)
         .await
         .into_diagnostic()?;
 

@@ -1,4 +1,4 @@
-use crate::cli::CliOutputOptions;
+use crate::cli::CliOutputFormat;
 use crate::ui::{self, ARROW, Styles, error_msg, success_msg, warn_msg};
 use indicatif::ProgressBar;
 use vetta_core::earnings::{EarningsObserver, PipelineStage};
@@ -6,13 +6,14 @@ use vetta_core::stt::domain::Transcript;
 
 pub struct EarningsCliObserver {
     spinner: ProgressBar,
-    output_option: CliOutputOptions,
+    #[allow(dead_code)]
+    format: CliOutputFormat,
     verbose: bool,
 }
 
 impl EarningsCliObserver {
-    pub fn new(output_option: CliOutputOptions, verbose: bool) -> Self {
-        let spinner = if output_option == CliOutputOptions::Json || !verbose {
+    pub fn new(format: CliOutputFormat, verbose: bool) -> Self {
+        let spinner = if !verbose {
             ProgressBar::hidden()
         } else {
             ui::spinner()
@@ -20,13 +21,13 @@ impl EarningsCliObserver {
 
         Self {
             spinner,
-            output_option,
+            format,
             verbose,
         }
     }
 
     fn is_verbose(&self) -> bool {
-        self.output_option == CliOutputOptions::Plain && self.verbose
+        self.verbose
     }
 }
 

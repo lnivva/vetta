@@ -3,7 +3,11 @@
 pub mod earnings;
 
 use console::{Emoji, Style, style};
-use indicatif::{ProgressBar, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use miette::IntoDiagnostic;
+use std::fs::File;
+use std::io::{Read, Write, stdin, stdout};
+use std::path::PathBuf;
 use std::time::Duration;
 
 pub static SUCCESS: Emoji<'_, '_> = Emoji("✓", "√");
@@ -35,31 +39,24 @@ impl Styles {
     pub fn primary() -> Style {
         Style::new().cyan().bold()
     }
-
     pub fn heading() -> Style {
         Style::new().bold().bright()
     }
-
     pub fn stat() -> Style {
         Style::new().cyan()
     }
-
     pub fn dimmed() -> Style {
         Style::new().dim()
     }
-
     pub fn success() -> Style {
         Style::new().green()
     }
-
     pub fn error() -> Style {
         Style::new().red().bold()
     }
-
     pub fn warning() -> Style {
         Style::new().yellow()
     }
-
     pub fn speaker(index: usize) -> Style {
         Style::new()
             .fg(SPEAKER_COLORS[index % SPEAKER_COLORS.len()])
@@ -68,7 +65,8 @@ impl Styles {
 }
 
 pub fn term_width() -> usize {
-    console::Term::stdout().size().1 as usize
+    // Bind to stderr so redirecting stdout to a file doesn't break terminal sizing
+    console::Term::stderr().size().1 as usize
 }
 
 pub fn content_width() -> usize {
@@ -136,7 +134,7 @@ pub fn timestamp(seconds: f64) -> String {
 }
 
 pub fn spinner() -> ProgressBar {
-    let pb = ProgressBar::new_spinner();
+    let pb = ProgressBar::with_draw_target(u64::MAX.into(), ProgressDrawTarget::stderr());
     pb.set_style(
         ProgressStyle::with_template(SPINNER_TEMPLATE)
             .unwrap()
@@ -145,4 +143,28 @@ pub fn spinner() -> ProgressBar {
     pb.set_prefix(INDENT.to_string());
     pb.enable_steady_tick(Duration::from_millis(80));
     pb
+}
+
+/// Creates a dynamic writer based on an optional path.
+/// Defaults to Stdout if None.
+pub fn get_writer(path: &Option<PathBuf>) -> miette::Result<Box<dyn Write>> {
+    match path {
+        Some(p) => {
+            let file = File::create(p).into_diagnostic()?;
+            Ok(Box::new(file))
+        }
+        None => Ok(Box::new(stdout())),
+    }
+}
+
+/// Creates a dynamic reader based on an optional path.
+/// Defaults to Stdin if None or if the path is "-".
+pub fn get_reader(path: &Option<PathBuf>) -> miette::Result<Box<dyn Read>> {
+    match path {
+        Some(p) if p.to_str() != Some("-") => {
+            let file = File::open(p).into_diagnostic()?;
+            Ok(Box::new(file))
+        }
+        _ => Ok(Box::new(stdin())),
+    }
 }
