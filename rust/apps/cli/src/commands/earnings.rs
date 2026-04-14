@@ -111,7 +111,10 @@ pub async fn handle(action: EarningsAction, ctx: &AppContext) -> Result<()> {
 
     let file_path = std::fs::canonicalize(&payload.file).into_diagnostic()?;
 
-    let db_config = DbConfig::from_env().into_diagnostic()?;
+    let db_config = DbConfig {
+        uri: ctx.config.mongodb_uri.clone(),
+        database: ctx.config.mongodb_database.clone(),
+    };
     let db = Db::connect(&db_config).await.into_diagnostic()?;
 
     let stt = factory::build_stt(ctx).await?;
