@@ -48,7 +48,6 @@ impl PayloadDriven for ConfigPayload {
     type CliArgs = ConfigSetArgs;
 
     fn from_cli(args: &Self::CliArgs) -> Option<Self> {
-        // We only "default" to CLI if at least one update flag is present
         if args.socket.is_some()
             || args.mongo_uri.is_some()
             || args.mongo_db.is_some()
@@ -85,7 +84,6 @@ pub async fn handle(action: ConfigAction, ctx: &AppContext) -> Result<()> {
     let config_path = VettaConfig::file_path()
         .ok_or_else(|| miette!("Could not determine the system configuration directory."))?;
 
-    // Prepare dynamic writer for stdout/file
     let mut writer = get_writer(&ctx.output)?;
 
     match action {
@@ -94,7 +92,6 @@ pub async fn handle(action: ConfigAction, ctx: &AppContext) -> Result<()> {
                 let json = serde_json::to_string_pretty(&ctx.config).into_diagnostic()?;
                 writeln!(writer, "{}", json).into_diagnostic()?;
             } else {
-                // Info metadata to stderr
                 eprintln!(
                     "{}",
                     info_msg(&format!("Config path: {}", config_path.display()))

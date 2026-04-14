@@ -92,8 +92,6 @@ impl VettaConfig {
             fs::write(&path, toml_string).into_diagnostic()?;
         }
 
-        fs::write(path, toml_string).into_diagnostic()?;
-
         Ok(())
     }
 }

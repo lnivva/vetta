@@ -21,10 +21,10 @@ class DomainEmbedding:
                 f"Expected 'index' to be an int, got {type(self.index).__name__}"
             )
 
-        if self.vector and not isinstance(self.vector[0], (float, int)):
-            raise TypeError(
-                f"Vector must contain numbers. Found: {type(self.vector[0]).__name__}"
-            )
+        if any(
+            not isinstance(v, (float, int)) or isinstance(v, bool) for v in self.vector
+        ):
+            raise TypeError("Vector must contain only numeric (non-bool) values.")
 
 
 @dataclass
@@ -40,4 +40,8 @@ class DomainEmbeddingResponse:
         if not isinstance(self.embeddings, list):
             raise TypeError(
                 "Expected 'embeddings' to be a list of DomainEmbedding objects."
+            )
+        if not all(isinstance(e, DomainEmbedding) for e in self.embeddings):
+            raise TypeError(
+                "All items in 'embeddings' must be DomainEmbedding instances."
             )

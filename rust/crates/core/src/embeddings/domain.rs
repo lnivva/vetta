@@ -1,6 +1,5 @@
 use async_trait::async_trait;
-use fmt::Display;
-use std::fmt;
+use std::fmt::{self, Display};
 
 use super::errors::EmbeddingError;
 
