@@ -118,6 +118,15 @@ else
 fi
 
 # ---------------------------------------------------------------------
+# Runtime directory for whisper Unix socket
+# ---------------------------------------------------------------------
+cat << 'EOF' > /etc/tmpfiles.d/whisper.conf
+d /run/whisper 0755 ubuntu ubuntu -
+EOF
+
+systemd-tmpfiles --create
+
+# ---------------------------------------------------------------------
 # Environment variables
 # ---------------------------------------------------------------------
 cat << 'EOF' > /etc/profile.d/vetta-env.sh
