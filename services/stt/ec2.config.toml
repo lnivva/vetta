@@ -1,0 +1,36 @@
+[service]
+socket_path = "/run/whisper/whisper.sock"
+log_level = "info"
+max_audio_size_mb = 500
+
+[model]
+size = "large-v3"
+download_dir = "/mnt/nvme/models"
+device = "cuda"
+compute_type = "float16"
+hf_token = ""
+
+[inference]
+beam_size = 8
+vad_filter = true
+vad_min_silence_ms = 1000
+no_speech_threshold = 0.4
+log_prob_threshold = -0.3
+compression_ratio_threshold = 2.0
+word_timestamps = true
+initial_prompt = ""
+
+[concurrency]
+max_workers = 1
+cpu_threads = 4
+num_workers = 1
+
+[diarization]
+enabled = true
+model = "pyannote/speaker-diarization-3.1"
+device = "cuda"
+min_speakers = 0
+max_speakers = 0
+
+[embeddings]
+api_key = ""
