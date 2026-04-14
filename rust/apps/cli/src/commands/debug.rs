@@ -92,7 +92,11 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
     let payload = SearchPayload::resolve(ctx, &args)?;
 
     // 1. Setup Infrastructure
-    let db_config = DbConfig::from_env().into_diagnostic()?;
+    let db_config = DbConfig::new(
+        ctx.config.mongodb_uri.clone(),
+        ctx.config.mongodb_database.clone(),
+    );
+
     let db = Db::connect(&db_config).await.into_diagnostic()?;
     let embedder = factory::build_embedder(ctx).await?;
     let searcher = build_searcher(&db);
