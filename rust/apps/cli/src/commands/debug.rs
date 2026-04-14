@@ -1,12 +1,13 @@
 use clap::{Args, Subcommand};
-use miette::{IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, WrapErr, bail};
 use std::io::Write;
+use std::process::Command;
 
 use crate::{
     cli::{CliOutputFormat, PayloadDriven},
     context::AppContext,
     infra::factory,
-    ui::{INDENT, Styles, info_msg, separator},
+    ui::{INDENT, Styles, info_msg, separator, success_msg},
 };
 
 use crate::ui::get_writer;
@@ -32,7 +33,11 @@ pub struct SearchArgs {
 
 #[derive(Subcommand)]
 pub enum DebugAction {
+    /// Search vectors in the database
     SearchVectors(SearchArgs),
+
+    /// Explicitly trigger the database migration/index check
+    MigrateDb,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -77,7 +82,13 @@ impl PayloadDriven for SearchPayload {
 }
 
 pub async fn handle(action: DebugAction, ctx: &AppContext) -> Result<()> {
-    let DebugAction::SearchVectors(args) = action;
+    match action {
+        DebugAction::SearchVectors(args) => handle_search_vectors(args, ctx).await,
+        DebugAction::MigrateDb => handle_migrate_db(ctx),
+    }
+}
+
+async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()> {
     let payload = SearchPayload::resolve(ctx, &args)?;
 
     // 1. Setup Infrastructure
@@ -144,6 +155,43 @@ pub async fn handle(action: DebugAction, ctx: &AppContext) -> Result<()> {
     Ok(())
 }
 
+fn handle_migrate_db(ctx: &AppContext) -> Result<()> {
+    if ctx.debug {
+        tracing::debug!("Ensuring database indexes are up to date...");
+    }
+
+    let mut migrate_bin = std::env::current_exe()
+        .into_diagnostic()
+        .wrap_err("Failed to resolve current executable path")?;
+    migrate_bin.pop();
+    migrate_bin.push("vetta_migrate");
+
+    let mut cmd = Command::new(&migrate_bin);
+
+    cmd.env("MONGODB_URI", &ctx.config.mongodb_uri);
+    cmd.env("MONGODB_DATABASE", &ctx.config.mongodb_database);
+
+    if !ctx.debug {
+        cmd.env("RUST_LOG", "error");
+    }
+
+    let status = cmd
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit())
+        .status()
+        .into_diagnostic()
+        .wrap_err("Failed to execute vetta_migrate binary. Did you build it with: `cargo build --bin vetta_migrate`?")?;
+
+    if !status.success() {
+        let code = status.code().unwrap_or(-1);
+        bail!("Database migration failed with exit code: {}", code);
+    }
+
+    eprintln!("{}", success_msg("Database migration check passed successfully."));
+
+    Ok(())
+}
+
 fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -> Result<()> {
     if results.is_empty() {
         writeln!(out, "\n{INDENT}No relevant segments found.").into_diagnostic()?;
@@ -158,7 +206,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             Styles::heading().apply_to(format!("Result #{}", i + 1)),
             Styles::stat().apply_to(format!("{:.4}", res.score))
         )
-        .into_diagnostic()?;
+            .into_diagnostic()?;
 
         writeln!(
             out,
@@ -168,7 +216,7 @@ fn render_plain_results(results: Vec<VectorSearchResult>, out: &mut dyn Write) -
             res.year,
             res.quarter
         )
-        .into_diagnostic()?;
+            .into_diagnostic()?;
 
         writeln!(out, "{INDENT}{}\n", separator()).into_diagnostic()?;
 

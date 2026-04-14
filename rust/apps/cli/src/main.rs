@@ -8,16 +8,15 @@ mod ui;
 use crate::config::VettaConfig;
 use clap::Parser;
 use context::AppContext;
-use miette::{IntoDiagnostic, Result, WrapErr, bail};
+use miette::{IntoDiagnostic, Result};
 use std::io;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::path::PathBuf;
 use tracing::debug;
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let env_path = load_env_vars()?;
+    let _env_path = load_env_vars()?;
 
     let persistent_config = VettaConfig::load();
     let cli = cli::Cli::parse();
@@ -44,8 +43,6 @@ async fn main() -> Result<()> {
         output: cli.output,
     };
 
-    ensure_migrated(&ctx, env_path.as_deref())?;
-
     commands::dispatch(cli.command, &ctx).await
 }
 
@@ -64,50 +61,4 @@ fn load_env_vars() -> Result<Option<PathBuf>> {
         }
     };
     Ok(env_path)
-}
-
-#[cfg(debug_assertions)]
-fn ensure_migrated(ctx: &AppContext, env_path: Option<&Path>) -> Result<()> {
-    if ctx.debug {
-        debug!("Ensuring database indexes are up to date...");
-    }
-
-    let mut migrate_bin = std::env::current_exe()
-        .into_diagnostic()
-        .wrap_err("Failed to resolve current executable path")?;
-    migrate_bin.pop();
-    migrate_bin.push("vetta_migrate");
-
-    let mut cmd = Command::new(&migrate_bin);
-
-    if let Some(path) = env_path {
-        cmd.env("VETTA_ENV_PATH", path);
-    }
-
-    if !ctx.debug {
-        cmd.env("RUST_LOG", "error");
-    }
-
-    let status = cmd
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::inherit())
-        .status()
-        .into_diagnostic()
-        .wrap_err("Failed to execute vetta_migrate binary. Did you build it with: `cargo build --bin vetta_migrate`?")?;
-
-    if !status.success() {
-        let code = status.code().unwrap_or(-1);
-        bail!("Database migration failed with exit code: {}", code);
-    }
-
-    if ctx.debug {
-        debug!("Database migration check passed.");
-    }
-
-    Ok(())
-}
-
-#[cfg(not(debug_assertions))]
-fn ensure_migrated(_ctx: &AppContext, _env_path: Option<&Path>) -> Result<()> {
-    Ok(())
 }
