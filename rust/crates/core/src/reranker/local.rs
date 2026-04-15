@@ -53,7 +53,7 @@ impl Reranker for LocalRerankerStrategy {
             query: query.to_string(),
             documents,
             top_k,
-            truncate: true,
+            truncate: Some(true),
             extra_params: None,
         });
         request.set_timeout(Duration::from_secs(10));
