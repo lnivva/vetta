@@ -29,19 +29,20 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
         truncate = request.truncate
 
         # 1. Validate gRPC Inputs
-        if not model:
+        if not model or not model.strip():
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT, "Model identifier cannot be empty."
             )
             return None
 
-        if not query:
+        if not query or not query.strip():
             context.abort(grpc.StatusCode.INVALID_ARGUMENT, "Query cannot be empty.")
             return None
 
-        if not documents:
+        if not documents or any(not doc.strip() for doc in documents):
             context.abort(
-                grpc.StatusCode.INVALID_ARGUMENT, "Documents list cannot be empty."
+                grpc.StatusCode.INVALID_ARGUMENT,
+                "Documents list cannot be empty or contain blank entries.",
             )
             return None
 
@@ -64,9 +65,7 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
 
             return self._map_to_proto(domain_response)
 
-        # 3. Handle specific domain exceptions
-        except ValueError as exc:
-            context.abort(grpc.StatusCode.INVALID_ARGUMENT, str(exc))
+
         except RerankerError:
             logger.exception("Reranking generation failed")
             context.abort(
