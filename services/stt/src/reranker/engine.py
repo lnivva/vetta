@@ -21,8 +21,9 @@ class RerankerEngine:
     Currently, wraps Voyage AI, but exposes a generic domain interface.
     """
 
+    DEFAULT_TRUNCATE = True
+
     def __init__(self, settings: Settings):
-        # Checks for the API key in the settings, falling back to None if missing
         api_key = (
             settings.embeddings.api_key if hasattr(settings, "embeddings") else None
         )
@@ -38,11 +39,23 @@ class RerankerEngine:
         query: str,
         documents: List[str],
         top_k: Optional[int] = None,
-        truncate: bool = True,
+        truncate: Optional[bool] = None,
     ) -> DomainRerankingResponse:
         """
         Takes a query and raw document text inputs, returning domain reranking objects.
+
+        Args:
+            model: The model identifier to use for reranking.
+            query: The query to rerank documents against.
+            documents: The list of document strings to rerank.
+            top_k: Optional maximum number of results to return.
+            truncate: Whether to truncate documents that exceed the model's
+                context length. When None (i.e. the caller did not explicitly
+                set a value), defaults to True so that long documents are
+                silently truncated rather than rejected.
         """
+        effective_truncate = truncate if truncate is not None else self.DEFAULT_TRUNCATE
+
         logger.debug(f"Reranking {len(documents)} documents using {model}")
 
         try:
@@ -50,7 +63,7 @@ class RerankerEngine:
                 "query": query,
                 "documents": documents,
                 "model": model,
-                "truncation": truncate,
+                "truncation": effective_truncate,
             }
             if top_k is not None:
                 kwargs["top_k"] = top_k

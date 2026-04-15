@@ -26,9 +26,7 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
         model = request.model
         query = request.query
         documents = list(request.documents)
-        truncate = request.truncate
 
-        # 1. Validate gRPC Inputs
         if not model or not model.strip():
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT, "Model identifier cannot be empty."
@@ -47,13 +45,13 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
             return None
 
         top_k = request.top_k if request.HasField("top_k") else None
+        truncate = request.truncate if request.HasField("truncate") else None
 
         if top_k is not None and top_k <= 0:
             context.abort(
                 grpc.StatusCode.INVALID_ARGUMENT, "top_k must be greater than 0."
             )
 
-        # 2. Execute Business Logic
         try:
             domain_response = self._engine.rerank(
                 model=model,
@@ -64,7 +62,6 @@ class RerankerServicer(reranker_pb2_grpc.RerankerServiceServicer):
             )
 
             return self._map_to_proto(domain_response)
-
 
         except RerankerError:
             logger.exception("Reranking generation failed")

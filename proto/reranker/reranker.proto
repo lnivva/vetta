@@ -13,7 +13,7 @@ message RerankRequest {
   string query = 2;
   repeated string documents = 3;
   optional int32 top_k = 4;
-  bool truncate = 5;
+  optional bool truncate = 5;
   google.protobuf.Struct extra_params = 6;
 }
 
