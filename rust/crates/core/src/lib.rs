@@ -27,4 +27,7 @@ pub use vector_search::{SearchFilters, VectorSearchResult, build_searcher};
 
 pub use reranker::{LocalRerankerStrategy, Reranker};
 
-pub use stt::{LocalSttStrategy, Stt, domain::Quarter, domain::Transcript};
+pub use stt::{
+    LocalSttStrategy, Stt, SttError, TranscribeOptions, TranscriptChunk, TranscriptStream, Word,
+    domain::Quarter, domain::Transcript,
+};

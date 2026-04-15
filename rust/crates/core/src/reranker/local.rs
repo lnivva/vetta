@@ -66,7 +66,7 @@ impl Reranker for LocalRerankerStrategy {
             })
             .collect();
 
-        let total_tokens = response.usage.map(|u| u.total_tokens as u32).unwrap_or(0);
+        let total_tokens = response.usage.map(|u| u.total_tokens).unwrap_or(0);
 
         Ok(DomainRerankResponse {
             model: response.model,

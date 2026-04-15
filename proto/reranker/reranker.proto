@@ -30,5 +30,5 @@ message RerankingResult {
 }
 
 message Usage {
-  int32 total_tokens = 1;
+  uint32 total_tokens = 1;
 }

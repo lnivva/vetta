@@ -23,7 +23,7 @@ pub struct ProcessArgs {
     pub ticker: Option<String>,
     #[arg(short, long)]
     pub year: Option<u16>,
-    #[arg(short, long, value_enum)]
+    #[arg(short, long)]
     pub quarter: Option<Quarter>,
     #[arg(long)]
     pub replace: bool,

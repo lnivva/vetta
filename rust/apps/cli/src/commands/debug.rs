@@ -174,14 +174,13 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
         // Extract raw document text to send to Voyage AI
         let documents: Vec<String> = candidate_results.iter().map(|r| r.text.clone()).collect();
 
+        let top_k = i32::try_from(payload.limit)
+            .into_diagnostic()
+            .wrap_err("--limit exceeds the reranker protocol range (i32)")?;
+
         // Call the reranker via UDS using the upgraded model
         let rerank_response = reranker
-            .rerank(
-                "rerank-2.5",
-                &payload.query,
-                documents,
-                Some(payload.limit as i32),
-            )
+            .rerank("rerank-2.5", &payload.query, documents, Some(top_k))
             .await
             .into_diagnostic()?;
 
@@ -230,7 +229,7 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
                 info_msg("--- Stage 1: Vector Search Candidates ---")
             )
             .into_diagnostic()?;
-            render_plain_results(&candidate_results, &mut writer)?;
+            render_plain_results(&candidate_results, "Vector Score", &mut writer)?;
 
             writeln!(
                 writer,
@@ -238,7 +237,7 @@ async fn handle_search_vectors(args: SearchArgs, ctx: &AppContext) -> Result<()>
                 info_msg("--- Stage 2: Reranked Results (Filtered) ---")
             )
             .into_diagnostic()?;
-            render_plain_results(&final_results, &mut writer)?;
+            render_plain_results(&final_results, "Relevance Score", &mut writer)?;
         }
     }
 
@@ -285,7 +284,11 @@ fn handle_migrate_db(ctx: &AppContext) -> Result<()> {
     Ok(())
 }
 
-fn render_plain_results(results: &[VectorSearchResult], out: &mut dyn Write) -> Result<()> {
+fn render_plain_results(
+    results: &[VectorSearchResult],
+    score_label: &str,
+    out: &mut dyn Write,
+) -> Result<()> {
     if results.is_empty() {
         writeln!(out, "\n{INDENT}No relevant segments found.").into_diagnostic()?;
         return Ok(());
@@ -295,8 +298,9 @@ fn render_plain_results(results: &[VectorSearchResult], out: &mut dyn Write) -> 
         writeln!(out, "\n{INDENT}{}", separator()).into_diagnostic()?;
         writeln!(
             out,
-            "{INDENT}{} (Relevance Score: {})",
+            "{INDENT}{} ({}: {})",
             Styles::heading().apply_to(format!("Result #{}", i + 1)),
+            score_label,
             Styles::stat().apply_to(format!("{:.4}", res.score))
         )
         .into_diagnostic()?;
