@@ -33,7 +33,7 @@ dev = [
     "types-grpcio>=1.0.0.20251009",
     "types-protobuf>=7.34.1.20260408",
     "types-psutil>=7.2.2.20260130",
-    "types-requests>=2.32.4.20260107",
+    "types-requests>=2.33.0.20260408",
 ]
 
 [tool.uv]
